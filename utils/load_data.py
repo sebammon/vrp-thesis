@@ -114,4 +114,4 @@ class VRPDataset(Dataset):
         return instance
 
     def __repr__(self):
-        return f"GraphDataset(len={len(self.data)})"
+        return f"VRPDataset(len={len(self.data)})"
