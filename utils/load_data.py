@@ -106,12 +106,10 @@ class VRPDataset(Dataset):
         coords = torch.tensor(raw_instance.coords, dtype=torch.float32)
         demand = torch.tensor(raw_instance.demand, dtype=torch.float32)
         distance_matrix = torch.tensor(raw_instance.distance_matrix, dtype=torch.float32)
-        edge_matrix = torch.tensor(raw_instance.edge_matrix, dtype=torch.float32)
+        edge_matrix = torch.tensor(raw_instance.edge_matrix, dtype=torch.int64)
         target_matrix = torch.tensor(raw_instance.target_matrix, dtype=torch.int64)
 
-        instance = Instance(coords, demand, distance_matrix, edge_matrix, target_matrix, None)
-
-        return instance
+        return (coords, demand, distance_matrix, edge_matrix), target_matrix
 
     def __repr__(self):
         return f"VRPDataset(len={len(self.data)})"
