@@ -8,6 +8,10 @@ MODELS_DIR = Path(__file__).parent.parent / 'models'
 def save_model(model, filename='model.pt', overwrite=False):
     """
     Saves model to disk.
+    :param model: torch model
+    :param filename: filename
+    :param overwrite: overwrite existing file
+    :return: None
     """
     if not MODELS_DIR.exists():
         MODELS_DIR.mkdir()
@@ -22,6 +26,8 @@ def save_model(model, filename='model.pt', overwrite=False):
 def load_model(filename):
     """
     Loads model from disk.
+    :param filename: filename
+    :return: torch model
     """
     if not MODELS_DIR.exists():
         raise FileNotFoundError(f"Directory {MODELS_DIR} does not exist")
