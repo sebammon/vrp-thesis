@@ -1,6 +1,5 @@
 import pickle
-from collections import namedtuple
-from pathlib import Path
+import sys
 
 import numpy as np
 import torch
@@ -8,6 +7,7 @@ from scipy.spatial.distance import squareform, pdist
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 
+from utils.common import DotDict
 from utils.solver import Solver
 
 SCALING_FACTOR = 1_000
@@ -17,7 +17,14 @@ VEHICLE_OPTIONS = {
     "20": (5, 40)
 }
 
-Instance = namedtuple("Instance", ["coords", "demand", "distance_matrix", "edge_matrix", "target_matrix", "routes"])
+
+def load_pickle(file):
+    with open(file, 'rb') as f:
+        return pickle.load(f)
+
+
+def get_errors(results):
+    return [inst for inst in results if not inst.get('routes')]
 
 
 def get_vehicle_config(num_nodes):
@@ -89,7 +96,7 @@ def solve(instance):
                                    demands=instance[:, 2],
                                    vehicle_capacity=vehicle_capacity,
                                    num_vehicles=num_vehicles)
-    vrp_solver = Solver(data_model, time_limit=5, first_solution_strategy='SAVINGS')
+    vrp_solver = Solver(data_model, time_limit=3, first_solution_strategy='SAVINGS')
     solution = vrp_solver.solve()
 
     return solution, vrp_solver
@@ -132,9 +139,6 @@ def adjacency_matrix(num_nodes, routes):
     adj_matrix = np.zeros((num_nodes, num_nodes))
 
     for path in routes.values():
-        # start and end at depot
-        assert path[0] != 0 and path[-1] != 0, "Route already starts or ends at depot."
-
         path = [0] + list(path) + [0]
 
         for i in range(len(path) - 1):
@@ -149,28 +153,34 @@ def adjacency_matrix(num_nodes, routes):
     return adj_matrix
 
 
+def edge_feature_matrix(dist_matrix, k=3):
+    """
+    Computes the edge feature matrix
+    :param dist_matrix: (n, n) distance matrix
+    :param k: number of nearest neighbors
+    :return: (n, n) edge feature matrix
+    """
+    edge_matrix = np.zeros_like(dist_matrix)
+
+    # find k-nearst neighbors
+    for i in range(len(dist_matrix)):
+        knns = np.argsort(dist_matrix[i])[1:k + 1]
+        edge_matrix[i, knns] = 1  # neat trick
+
+    # self connections
+    np.fill_diagonal(edge_matrix, 2)
+
+    return edge_matrix
+
+
 class Data:
 
-    @staticmethod
-    def edge_matrix(distance_matrix, k=3):
-        edge_matrix = np.zeros_like(distance_matrix)
-
-        # find k-nearst neighbors
-        for i in range(len(distance_matrix)):
-            knns = np.argsort(distance_matrix[i])[1:k + 1]
-            edge_matrix[i, knns] = 1  # neat trick
-
-        # self connections
-        np.fill_diagonal(edge_matrix, 2)
-
-        return edge_matrix
+    @classmethod
+    def process_dataset(cls, raw_dataset, k=3):
+        return [cls.process_one(instance, k=k) for instance in raw_dataset]
 
     @classmethod
-    def pre_process(cls, raw_dataset, k=3):
-        return [cls.process_instance(instance, k=k) for instance in raw_dataset]
-
-    @classmethod
-    def process_instance(cls, instance, k=3):
+    def process_one(cls, instance, k=3):
         node_demands, routes = instance
 
         node_demands = np.array(node_demands)
@@ -178,38 +188,37 @@ class Data:
         coords = np.array(node_demands)[:, :2]
         demand = np.array(node_demands)[:, 2]
         dist_matrix = distance_matrix(coords)
-        adj_matrix = adjacency_matrix(len(coords), routes)
-        edge_matrix = cls.edge_matrix(dist_matrix, k=k)
+        target_matrix = adjacency_matrix(coords.shape[0], routes)
+        edge_matrix = edge_feature_matrix(dist_matrix, k=k)
 
-        data = Instance(coords, demand, dist_matrix, edge_matrix, adj_matrix, routes)
+        data = DotDict({
+            'coords': coords,
+            'demand': demand,
+            'distance_matrix': dist_matrix,
+            'edge_feat_matrix': edge_matrix,
+            'target': target_matrix,
+            'routes': routes
+        })
 
         return data
 
     @classmethod
-    def load(cls, filename="vrp_11", test_size=0.2, random_state=42):
-        if filename.endswith(".pkl"):
-            raise ValueError("Filename must not end with .pkl")
+    def load(cls, results, test_size=0.2, random_state=42):
+        errors = get_errors(results)
 
-        data_dir = Path(__file__).parent.parent / "data"
-        with open(data_dir / f"{filename}.pkl", 'rb') as f:
-            instances = pickle.load(f)
+        if len(errors) > 0:
+            print("Errors found in some instances, remove them from the dataset.")
+            sys.exit(1)
 
-        with open(data_dir / f"{filename}_solved.pkl", 'rb') as f:
-            solutions = pickle.load(f)
-
-        assert len(instances) == len(solutions), "Number of instances and solutions must be equal"
-        assert np.all(
-            [solution['instance'] == i for i, solution in enumerate(solutions)]), "Instance numbers must be equal"
-
-        dataset = [(instance, solution['routes']) for instance, solution in zip(instances, solutions)]
+        dataset = [(result['instance'], result['routes']) for result in results]
         train, test = train_test_split(dataset, test_size=test_size, random_state=random_state, shuffle=True)
-        train, test = cls.pre_process(train), cls.pre_process(test)
+        train, test = cls.process_dataset(train), cls.process_dataset(test)
 
         return train, test
 
 
 class VRPDataset(Dataset):
-    def __init__(self, raw_dataset: list[Instance]):
+    def __init__(self, raw_dataset: list[DotDict]):
         super().__init__()
         self.data = raw_dataset
 
@@ -222,10 +231,10 @@ class VRPDataset(Dataset):
         coords = torch.tensor(raw_instance.coords, dtype=torch.float32)
         demand = torch.tensor(raw_instance.demand, dtype=torch.float32)
         dist_matrix = torch.tensor(raw_instance.distance_matrix, dtype=torch.float32)
-        edge_matrix = torch.tensor(raw_instance.edge_matrix, dtype=torch.int64)
-        target_matrix = torch.tensor(raw_instance.target_matrix, dtype=torch.int64)
+        edge_feat_matrix = torch.tensor(raw_instance.edge_feat_matrix, dtype=torch.int64)
+        target = torch.tensor(raw_instance.target, dtype=torch.int64)
 
-        return (coords, demand, dist_matrix, edge_matrix), target_matrix
+        return (coords, demand, dist_matrix, edge_feat_matrix), target
 
     def __repr__(self):
         return f"VRPDataset(len={len(self.data)})"

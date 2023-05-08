@@ -1,7 +1,4 @@
-class DotDict(dict):
-    """dot.notation access to dictionary attributes"""
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__
+from utils.common import DotDict
 
 
 def load_config(hidden_dim=30, node_features=2, edge_weight_features=1, edge_values_features=3, num_gcn_layers=10,
