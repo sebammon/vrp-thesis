@@ -9,8 +9,8 @@ from utils.data import generate_and_solve
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--n_nodes', type=int, default=20)
-    parser.add_argument('--n_instances', type=int, default=5_000)
+    parser.add_argument('--n_nodes', type=int, required=True, default=20)
+    parser.add_argument('--n_instances', type=int, required=True, default=5_000)
     parser.add_argument('--n_jobs', type=int, default=5)
 
     args = parser.parse_args()
