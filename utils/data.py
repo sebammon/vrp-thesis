@@ -54,7 +54,7 @@ def generate_vrp_instance(num_nodes, depot_location=None, demand_low=1, demand_h
     locations[0] = depot_location
     demands[0] = 0
 
-    return np.concatenate((locations, demands.reshape(-1, 1)), axis=1)
+    return np.concatenate((locations, demands.reshape(-1, 1)), axis=1, dtype=np.float32)
 
 
 def create_data_model(locations, demands, vehicle_capacity, num_vehicles, depot_index=0, scaling_factor=SCALING_FACTOR):
