@@ -110,12 +110,14 @@ class GraphLayer(nn.Module):
     Graph layer for x_i and e_ij
     """
 
-    def __init__(self, hidden_dim):
+    def __init__(self, hidden_dim, enable_dropout=False, dropout=0.2):
         super().__init__()
         self.node_feat = NodeFeatureLayer(hidden_dim)
         self.node_norm = NodeNorm(hidden_dim)
         self.edge_feat = EdgeFeatureLayer(hidden_dim)
         self.edge_norm = EdgeNorm(hidden_dim)
+        self.enable_dropout = enable_dropout
+        self.dropout = dropout
 
     def forward(self, x, e):
         """
@@ -139,9 +141,17 @@ class GraphLayer(nn.Module):
         x_norm = self.node_norm(x_feat)
         e_norm = self.edge_norm(e_feat)
 
+        # dropout
+        if self.enable_dropout:
+            x_drop = F.dropout(x_norm, p=self.dropout, training=self.training)
+            e_drop = F.dropout(e_norm, p=self.dropout, training=self.training)
+        else:
+            x_drop = x_norm
+            e_drop = e_norm
+
         # activation
-        x_act = F.relu(x_norm)
-        e_act = F.relu(e_norm)
+        x_act = F.relu(x_drop)
+        e_act = F.relu(e_drop)
 
         # combine
         x_new = x + x_act
@@ -187,6 +197,7 @@ class GraphNet(nn.Module):
         self.edge_values_features = config.edge_values_features
         self.num_gcn_layers = config.num_gcn_layers
         self.num_mlp_layers = config.num_mlp_layers
+        self.enable_dropout = config.enable_dropout or False
 
         # embeddings
         # TODO: Why is bias turned off when in the paper they don't mention anything?
@@ -198,7 +209,7 @@ class GraphNet(nn.Module):
 
         # GCN layers
         self.gcn_layers = nn.ModuleList([
-            GraphLayer(hidden_dim=self.hidden_dim) for _ in range(self.num_gcn_layers)
+            GraphLayer(hidden_dim=self.hidden_dim, enable_dropout=self.enable_dropout) for _ in range(self.num_gcn_layers)
         ])
 
         # edge prediction MLP

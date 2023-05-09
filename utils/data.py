@@ -18,7 +18,23 @@ VEHICLE_OPTIONS = {
 }
 
 
+def store_pickle(obj, file):
+    """
+    Stores the given object in a pickle file.
+    :param obj: object to store
+    :param file: location of pickle file
+    :return: None
+    """
+    with open(file, 'wb') as f:
+        pickle.dump(obj, f)
+
+
 def load_pickle(file):
+    """
+    Loads the given pickle file.
+    :param file: location of pickle file
+    :return: Any
+    """
     with open(file, 'rb') as f:
         return pickle.load(f)
 

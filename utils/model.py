@@ -38,3 +38,30 @@ def load_model(filename):
     model = torch.load(MODELS_DIR / filename)
 
     return model
+
+
+def save_checkpoint(filename, model, optimizer, config, edge_class_weights):
+    """
+    Saves the current state of the model.
+    :param str filename: filename of the checkpoint. Stored in the model directory.
+    :param torch.nn.Module model: model to save
+    :param torch.optim.Optimizer optimizer: optimizer to save
+    :param DotDict config: configuration of the model
+    :param torch.Tensor edge_class_weights: edge class weights
+    :return: None
+    """
+    torch.save({
+        'config': config,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'class_weights': edge_class_weights
+    }, MODELS_DIR / filename)
+
+
+def load_checkpoint(filename):
+    """
+    Loads the checkpoint from disk.
+    :param str filename: filename of the checkpoint. Stored in the model directory.
+    :return: (config, model_state_dict, optimizer_state_dict, class_weights)
+    """
+    return torch.load(MODELS_DIR / filename)
