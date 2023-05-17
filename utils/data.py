@@ -52,22 +52,21 @@ def get_vehicle_config(num_nodes):
     return VEHICLE_OPTIONS[str(num_nodes)]
 
 
-def generate_vrp_instance(num_nodes, depot_location=None, demand_low=1, demand_high=10):
+def generate_vrp_instance(num_nodes, random_depot_location=True, demand_low=1, demand_high=10):
     """
     Generates a random instance of the CVRP.
     :param num_nodes: number of nodes to create
-    :param depot_location: location of the depot node
+    :param bool random_depot_location: depot location is randomly selected if True, otherwise fixed to (0.5, 0.5)
     :param demand_low: demand lower bound
     :param demand_high: demand upper bound
     :return: (num_nodes, 3) locations and demands of the nodes
     """
-    if depot_location is None:
-        depot_location = [0.5, 0.5]
-
     locations = np.random.rand(num_nodes, 2)
-    demands = np.random.randint(demand_low, demand_high + 1, num_nodes)
+    demands = np.random.randint(demand_low, demand_high, num_nodes)
 
-    locations[0] = depot_location
+    if not random_depot_location:
+        locations[0] = [0.5, 0.5]
+
     demands[0] = 0
 
     return np.concatenate((locations, demands.reshape(-1, 1)), axis=1, dtype=np.float32)
@@ -101,10 +100,11 @@ def create_data_model(locations, demands, vehicle_capacity, num_vehicles, depot_
     return data_model
 
 
-def solve(instance):
+def solve(instance, time_limit=3):
     """
     Solves the given instance of the CVRP.
     :param instance: (n, 3) instance of the CVRP with locations and demands
+    :param int time_limit: time limit for the solver
     :return: (dict, Solver) solution and solver object
     """
     num_vehicles, vehicle_capacity = get_vehicle_config(instance.shape[0])
@@ -112,20 +112,22 @@ def solve(instance):
                                    demands=instance[:, 2],
                                    vehicle_capacity=vehicle_capacity,
                                    num_vehicles=num_vehicles)
-    vrp_solver = Solver(data_model, time_limit=3, first_solution_strategy='SAVINGS')
+    vrp_solver = Solver(data_model, time_limit=time_limit, first_solution_strategy='SAVINGS')
     solution = vrp_solver.solve()
 
     return solution, vrp_solver
 
 
-def generate_and_solve(num_nodes):
+def generate_and_solve(num_nodes, random_depot_location=True, time_limit=3):
     """
     Generate and solve an instance of the CVRP.
     :param num_nodes: number of nodes to generate
+    :param bool random_depot_location: depot location is randomly selected if True, otherwise fixed to (0.5, 0.5)
+    :param int time_limit: time limit for the solver
     :return: dict solution
     """
-    instance = generate_vrp_instance(num_nodes)
-    solution, _solver = solve(instance)
+    instance = generate_vrp_instance(num_nodes, random_depot_location=random_depot_location)
+    solution, _solver = solve(instance, time_limit)
 
     if solution:
         solution['instance'] = instance
@@ -133,7 +135,7 @@ def generate_and_solve(num_nodes):
         return solution
 
     # try again
-    return generate_and_solve(num_nodes)
+    return generate_and_solve(num_nodes, random_depot_location, time_limit)
 
 
 def distance_matrix(node_coords):
@@ -186,32 +188,37 @@ def edge_feature_matrix(dist_matrix, k=3):
     # self connections
     np.fill_diagonal(edge_matrix, 2)
 
+    # depot connections
+    # TODO: test if this is necessary
+    # edge_matrix[1:, 0] = 3
+
     return edge_matrix
 
 
-class Data:
+class VRPData:
+    @classmethod
+    def process_dataset(cls, dataset, **kwargs):
+        return [cls.process_one(instance, **kwargs) for instance in dataset]
 
     @classmethod
-    def process_dataset(cls, raw_dataset, k=3):
-        return [cls.process_one(instance, k=k) for instance in raw_dataset]
+    def process_one(cls, solution, k=3, normalize_demand=True):
+        instance = solution['instance']
+        routes = solution['routes']
 
-    @classmethod
-    def process_one(cls, instance, k=3):
-        node_demands, routes = instance
+        node_features = np.array(instance, copy=True)
 
-        node_demands = np.array(node_demands)
+        if normalize_demand:
+            _num_vehicles, vehicle_capacity = get_vehicle_config(instance.shape[0])
+            node_features[:, 2] = node_features[:, 2] / vehicle_capacity  # normalise demand
 
-        coords = np.array(node_demands)[:, :2]
-        demand = np.array(node_demands)[:, 2]
-        dist_matrix = distance_matrix(coords)
-        target_matrix = adjacency_matrix(coords.shape[0], routes)
-        edge_matrix = edge_feature_matrix(dist_matrix, k=k)
+        dist_matrix = distance_matrix(node_features[:, :2])
+        target_matrix = adjacency_matrix(node_features.shape[0], routes)
+        edge_feat_matrix = edge_feature_matrix(dist_matrix, k=k)
 
         data = DotDict({
-            'coords': coords,
-            'demand': demand,
-            'distance_matrix': dist_matrix,
-            'edge_feat_matrix': edge_matrix,
+            'node_features': node_features,
+            'dist_matrix': dist_matrix,
+            'edge_feat_matrix': edge_feat_matrix,
             'target': target_matrix,
             'routes': routes
         })
@@ -219,38 +226,41 @@ class Data:
         return data
 
     @classmethod
-    def load(cls, results, test_size=0.2, random_state=42):
+    def load(cls, results, test_size=0.2, random_state=42, **kwargs):
         errors = get_errors(results)
 
         if len(errors) > 0:
             print("Errors found in some instances, remove them from the dataset.")
             sys.exit(1)
 
-        dataset = [(result['instance'], result['routes']) for result in results]
-        train, test = train_test_split(dataset, test_size=test_size, random_state=random_state, shuffle=True)
-        train, test = cls.process_dataset(train), cls.process_dataset(test)
+        processed_dataset = cls.process_dataset(results, **kwargs)
+        train, test = train_test_split(processed_dataset, test_size=test_size, random_state=random_state, shuffle=True)
+        train, test = VRPDataset(train), VRPDataset(test)
 
-        return train, test
+        return DotDict({"train": train, "test": test})
 
 
 class VRPDataset(Dataset):
-    def __init__(self, raw_dataset: list[DotDict]):
+    def __init__(self, data: list[DotDict]):
         super().__init__()
-        self.data = raw_dataset
+        self.data = data
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        raw_instance = self.data[idx]
+        data = self.data[idx]
 
-        coords = torch.tensor(raw_instance.coords, dtype=torch.float32)
-        demand = torch.tensor(raw_instance.demand, dtype=torch.float32)
-        dist_matrix = torch.tensor(raw_instance.distance_matrix, dtype=torch.float32)
-        edge_feat_matrix = torch.tensor(raw_instance.edge_feat_matrix, dtype=torch.int64)
-        target = torch.tensor(raw_instance.target, dtype=torch.int64)
+        node_features = torch.tensor(data.node_features, dtype=torch.float32)
+        dist_matrix = torch.tensor(data.dist_matrix, dtype=torch.float32)
+        edge_feat_matrix = torch.tensor(data.edge_feat_matrix, dtype=torch.int64)
+        target = torch.tensor(data.target, dtype=torch.int64)
 
-        return (coords, demand, dist_matrix, edge_feat_matrix), target
+        features = {"node_features": node_features,
+                    "dist_matrix": dist_matrix,
+                    "edge_feat_matrix": edge_feat_matrix}
+
+        return features, target
 
     def __repr__(self):
         return f"VRPDataset(len={len(self.data)})"

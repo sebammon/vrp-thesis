@@ -78,7 +78,9 @@ class Solver:
         if self.__solver_solution is None:
             return None
 
-        solution_data = {}
+        solution_data = {
+            'vehicles_used': 0,
+        }
         routes = {}
 
         for vehicle_id in range(self.data['num_vehicles']):
@@ -92,6 +94,9 @@ class Solver:
                     route.append(node_index)
 
             routes[vehicle_id] = route
+
+            if len(route) > 0:
+                solution_data['vehicles_used'] += 1
 
         solution_data['routes'] = routes
         solution_data['total_distance'] = self.__solver_solution.ObjectiveValue()

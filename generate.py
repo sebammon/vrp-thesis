@@ -9,8 +9,10 @@ from utils.data import generate_and_solve
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--n_nodes', type=int, required=True, default=20)
-    parser.add_argument('--n_instances', type=int, required=True, default=5_000)
+    parser.add_argument('--n_nodes', type=int, default=20)
+    parser.add_argument('--n_instances', type=int, default=5_000)
+    parser.add_argument('--time_limit', type=int, default=3)
+    parser.add_argument('--random_depot_location', type=bool, default=True)
     parser.add_argument('--n_jobs', type=int, default=5)
 
     args = parser.parse_args()
@@ -21,6 +23,9 @@ if __name__ == '__main__':
     data_dir = Path("data")
     data_dir.mkdir(exist_ok=True)
 
-    # TODO: ensure that the file is not overwritten
-    with open(data_dir / f"results_{args.n_instances}x{args.n_nodes}_nodes.pkl", "wb") as f:
+    file_name = f"vrp_{args.n_nodes}_{args.n_instances}_{args.time_limit}s"
+    if (data_dir / f"{file_name}.pkl").exists():
+        file_name += "_1"
+
+    with open(data_dir / f"{file_name}.pkl", "wb") as f:
         pickle.dump(results, f)
