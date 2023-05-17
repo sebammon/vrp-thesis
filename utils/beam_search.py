@@ -169,7 +169,7 @@ class BeamSearch:
 
         # increment depot counter when visited
         self.depot_visits_counter += visited_nodes_mask[..., 0]  # batch_size x beam_width x num_nodes[0]
-        enable_depot_visit = torch.lt(self.depot_visits_counter, self.num_vehicles).type(self.long)
+        enable_depot_visit = torch.lt(self.depot_visits_counter, self.num_vehicles).type(self.float)
 
         if not self.allow_consecutive_depot_visits:
             # mask if just visited
