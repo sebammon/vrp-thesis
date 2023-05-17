@@ -2,13 +2,13 @@ import torch
 
 
 def stable_topk(input_tensor, k, dim=-1, descending=True):
-    # as a workaround for torch.topk(...) not being stable: https://github.com/pytorch/pytorch/issues/3982
+    # as a workaround for torch.topK(...) not being stable: https://github.com/pytorch/pytorch/issues/3982
     values, indices = torch.sort(input_tensor, dim=dim, descending=descending, stable=True)
 
     return values[..., :k], indices[..., :k]
 
 
-class Beamsearch:
+class BeamSearch:
     """
     Beam search procedure class.
 
@@ -18,18 +18,20 @@ class Beamsearch:
         [3]: https://github.com/chaitjo/graph-convnet-tsp/blob/master/utils/beamsearch.py
     """
 
-    def __init__(self, beam_width, trans_probs, num_vehicles=1, vehicle_capacity=1, random_start=False):
+    def __init__(self, trans_probs, beam_width=1, demands=None, num_vehicles=1, vehicle_capacity=1,
+                 random_start=False, allow_consecutive_depot_visits=True):
         # beam-search parameters
         self.beam_width = beam_width
+        self.allow_consecutive_depot_visits = allow_consecutive_depot_visits
 
         # TODO: Move tensors to GPU device for faster computation
-        # tensor data types and device
         self.device = None
         self.float = torch.float32
         self.long = torch.int64
 
         # all transition probabilities
         self.trans_probs = trans_probs.type(self.float)
+        self.demands = demands
         self.batch_size = trans_probs.size(0)
         self.num_nodes = trans_probs.size(1)
         self.num_vehicles = num_vehicles
@@ -50,7 +52,7 @@ class Beamsearch:
         self.remaining_capacity = torch.ones(self.batch_size, self.beam_width) * self.vehicle_capacity
 
         # mask for removing visited nodes etc.
-        self.mask = torch.ones(self.batch_size, self.beam_width, self.num_nodes).type(self.float)
+        self.unvisited_mask = torch.ones(self.batch_size, self.beam_width, self.num_nodes).type(self.float)
 
         # transition probability scores up-until current timestep
         self.scores = torch.zeros(self.batch_size, self.beam_width).type(self.float)
@@ -64,12 +66,13 @@ class Beamsearch:
         # start by masking the starting nodes
         self.update_mask(self.start_nodes)
 
-    def get_current_nodes(self):
+    @property
+    def current_nodes(self):
         """
         Get the nodes to expand at the current timestep
         """
         current_nodes = self.next_nodes[-1]
-        current_nodes = current_nodes.unsqueeze(2).expand_as(self.mask)
+        current_nodes = current_nodes.unsqueeze(2).expand_as(self.unvisited_mask)
 
         return current_nodes
 
@@ -78,6 +81,25 @@ class Beamsearch:
         # -1 for num_nodes because we already start at depot
         # -1 to offset num_vehicles
         return self.num_nodes + self.num_vehicles - 2
+
+    @property
+    def capacity_mask(self):
+        demand = self.demands.unsqueeze(1)
+        capacity = self.remaining_capacity.unsqueeze(2)
+
+        # batch_size x beam_width x num_nodes (same as visited_mask)
+        return torch.le(demand, capacity).type(self.long)
+
+    @property
+    def mask(self):
+        current_mask = self.unvisited_mask
+
+        if self.demands is not None:
+            # maybe the capacity masking isn't needed
+            current_mask *= self.capacity_mask
+            current_mask[..., 0] = self.capacity_mask[..., 0]
+
+        return current_mask
 
     def search(self):
         """
@@ -90,38 +112,39 @@ class Beamsearch:
         """
         Transition to the next timestep of the beam search
         """
-        current_nodes = self.get_current_nodes()
+        current_nodes = self.current_nodes
         trans_probs = self.trans_probs.gather(1, current_nodes)
 
         if len(self.parent_pointer) == 0:
-            # first transition, only use the starting nodes
+            # first transition
             beam_prob = trans_probs
+            # use only the starting nodes
             beam_prob[:, 1:] = torch.zeros_like(beam_prob[:, 1:])
         else:
             # multiply the previous scores (probabilities) with the current ones
             expanded_scores = self.scores.unsqueeze(2).expand_as(trans_probs)  # b x beam_width x num_nodes
             beam_prob = trans_probs * expanded_scores
 
-        # mask out visited nodes
+        # mask out nodes (based on conditions)
         beam_prob = beam_prob * self.mask
-        beam_prob[..., 0] += 1e-25  # always make the depot slightly available
+        # beam_prob[..., 0] += 1e-25  # always make the depot slightly available
 
         beam_prob = beam_prob.view(beam_prob.size(0), -1)  # flatten to (b x beam_width * num_nodes)
 
-        # get k=beam_width best scores and indices
-        best_scores, best_score_idxs = stable_topk(beam_prob, k=self.beam_width, dim=1)
+        # get k=beam_width best scores and indices (stable)
+        best_scores, best_score_idx = stable_topk(beam_prob, k=self.beam_width, dim=1)
 
         self.scores = best_scores
-        parent_index = torch.floor_divide(best_score_idxs, self.num_nodes).type(self.long)
+        parent_index = torch.floor_divide(best_score_idx, self.num_nodes).type(self.long)
         self.parent_pointer.append(parent_index)
 
         # next nodes
-        next_node = best_score_idxs - (parent_index * self.num_nodes)  # convert flat indices back to original
+        next_node = best_score_idx - (parent_index * self.num_nodes)  # convert flat indices back to original
         self.next_nodes.append(next_node)
 
         # keep masked rows from parents (for next step)
-        parent_mask = parent_index.unsqueeze(2).expand_as(self.mask)  # (batch_size, beam_size, num_nodes)
-        self.mask = self.mask.gather(1, parent_mask)
+        parent_mask = parent_index.unsqueeze(2).expand_as(self.unvisited_mask)  # batch_size x beam_size x num_nodes
+        self.unvisited_mask = self.unvisited_mask.gather(1, parent_mask)
 
         # keep depot counter and capacity from parent (for next step)
         self.depot_visits_counter = self.depot_visits_counter.gather(1, parent_index)
@@ -130,41 +153,48 @@ class Beamsearch:
         # mask next nodes (newly added nodes)
         self.update_mask(next_node)
 
-    def update_mask(self, new_nodes):
+    def update_mask(self, nodes):
         """
-        Sets indices of new_nodes = 0 in the mask.
+        Updates mask by setting visited nodes = 0.
 
-        Args:
-            new_nodes: (batch_size, beam_width) of new node indices
+        :param nodes: (batch_size, beam_width) of new node indices
         """
-        index = torch.arange(0, self.num_nodes, dtype=self.long).expand_as(self.mask)
-        new_nodes = new_nodes.unsqueeze(2).expand_as(self.mask)
+        index = torch.arange(0, self.num_nodes, dtype=self.long).expand_as(self.unvisited_mask)
+        new_nodes = nodes.unsqueeze(2).expand_as(self.unvisited_mask)
+
+        visited_nodes_mask = torch.eq(index, new_nodes).type(self.float)
 
         # set the mask = 0 at the new_node_idx positions
-        visited_nodes_mask = torch.eq(index, new_nodes).type(self.float)
-        update_mask = 1 - visited_nodes_mask
+        unvisited_update_mask = 1 - visited_nodes_mask
 
-        # increment depot visit counter where visited
+        # increment depot counter when visited
         self.depot_visits_counter += visited_nodes_mask[..., 0]  # batch_size x beam_width x num_nodes[0]
         enable_depot_visit = torch.lt(self.depot_visits_counter, self.num_vehicles).type(self.long)
-        # enable_depot_visit = enable_depot_visit * update_mask[..., 0]
 
-        # TODO:
-        # 1. reset the remaining capacity when visiting depot
-        # 2. decrement remaining capacity when visiting new nodes
-        # 3. mask nodes that don't fit in remaining capacity
+        if not self.allow_consecutive_depot_visits:
+            # mask if just visited
+            enable_depot_visit *= unvisited_update_mask[..., 0]
 
-        self.mask = self.mask * update_mask
+        if self.demands is not None:
+            # decrement remaining capacity
+            loads = self.demands.gather(1, nodes)
+            self.remaining_capacity -= loads
+
+            # reset depot visits, otherwise keep
+            self.remaining_capacity = torch.maximum(self.vehicle_capacity * visited_nodes_mask[..., 0],
+                                                    self.remaining_capacity)
+
+        # set new mask
+        self.unvisited_mask *= unvisited_update_mask
 
         # reset depot visit
-        self.mask[..., 0] = enable_depot_visit
+        self.unvisited_mask[..., 0] = enable_depot_visit
 
     def get_beam(self, beam_idx):
         """
         Construct the beam for the given index
 
-        Args:
-            beam_idx int: Index of the beam to construct (0 = best, ..., n = worst)
+        :param int beam_idx: Index of the beam to construct (0 = best, ..., n = worst)
         """
         assert len(self.next_nodes) == self.num_iterations + 1
 
