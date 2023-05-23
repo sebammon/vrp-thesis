@@ -110,13 +110,12 @@ class GraphLayer(nn.Module):
     Graph layer for x_i and e_ij
     """
 
-    def __init__(self, hidden_dim, enable_dropout=False, dropout=0.2):
+    def __init__(self, hidden_dim, dropout=None):
         super().__init__()
         self.node_feat = NodeFeatureLayer(hidden_dim)
         self.node_norm = NodeNorm(hidden_dim)
         self.edge_feat = EdgeFeatureLayer(hidden_dim)
         self.edge_norm = EdgeNorm(hidden_dim)
-        self.enable_dropout = enable_dropout
         self.dropout = dropout
 
     def forward(self, x, e):
@@ -125,7 +124,7 @@ class GraphLayer(nn.Module):
             x: Node features (batch x node_num x hidden_dim)
             e: Edge features (batch x num_nodes x num_nodes x hidden_dim)
         Return:
-            x: Aggrgated node features (batch x node_num x hidden_dim)
+            x: Aggregated node features (batch x node_num x hidden_dim)
             e: Aggragated edge features (batch x num_nodes x num_nodes x hidden_dim)
         """
         # edges
@@ -142,7 +141,7 @@ class GraphLayer(nn.Module):
         e_norm = self.edge_norm(e_feat)
 
         # dropout
-        if self.enable_dropout:
+        if self.dropout:
             x_drop = F.dropout(x_norm, p=self.dropout, training=self.training)
             e_drop = F.dropout(e_norm, p=self.dropout, training=self.training)
         else:
@@ -197,38 +196,38 @@ class GraphNet(nn.Module):
         self.edge_values_features = config.edge_values_features
         self.num_gcn_layers = config.num_gcn_layers
         self.num_mlp_layers = config.num_mlp_layers
-        self.enable_dropout = config.enable_dropout or False
+        self.dropout = config.dropout or None
 
         # embeddings
         # TODO: Why is bias turned off when in the paper they don't mention anything?
-        self.node_coord_embedding = nn.Linear(self.node_features, self.hidden_dim, bias=False)
+        self.node_feature_embedding = nn.Linear(self.node_features, self.hidden_dim, bias=False)
         self.distance_embedding = nn.Linear(self.edge_weight_features, self.hidden_dim // 2, bias=False)
         # TODO: Don't understand the use of the Embedding layer
         # 3 for the special cases 0, 1, 2 (more memory efficient)
-        self.edge_type_embedding = nn.Embedding(self.edge_values_features, self.hidden_dim // 2)
+        self.edge_feature_embedding = nn.Embedding(self.edge_values_features, self.hidden_dim // 2)
 
         # GCN layers
         self.gcn_layers = nn.ModuleList([
-            GraphLayer(hidden_dim=self.hidden_dim, enable_dropout=self.enable_dropout) for _ in range(self.num_gcn_layers)
+            GraphLayer(hidden_dim=self.hidden_dim, dropout=self.dropout) for _ in range(self.num_gcn_layers)
         ])
 
         # edge prediction MLP
         self.mlp_edges = MLP(in_dim=self.hidden_dim, out_dim=2, hidden_layers=self.num_mlp_layers)
 
-    def forward(self, node_coords, distance_matrix, edge_values):
+    def forward(self, node_features, distance_matrix, edge_features):
         """
         Args:
-            node_coords: Coordinates for each node (batch x num_nodes x num_nodes)
+            node_features: Coordinates for each node (batch x num_nodes x num_nodes)
             distance_matrix: Distance matrix between nodes (batch x num_nodes x num_nodes)
-            edge_values: Edge types to help learn faster (batch x num_nodes x num_nodes)
+            edge_features: Edge types to help learn faster (batch x num_nodes x num_nodes)
         """
         # eq 2
-        x = self.node_coord_embedding(node_coords)  # B x num_nodes x hidden_dim
+        x = self.node_feature_embedding(node_features)  # B x num_nodes x hidden_dim
 
         # eq 3
         dist_unsqueezed = distance_matrix.unsqueeze(3)  # B x num_nodes x num_nodes x 1
         e_dist = self.distance_embedding(dist_unsqueezed)  # B x num_nodes x num_nodes x hidden_dim // 2
-        e_values = self.edge_type_embedding(edge_values)  # B x num_nodes x num_nodes x hidden_dim // 2
+        e_values = self.edge_feature_embedding(edge_features)  # B x num_nodes x num_nodes x hidden_dim // 2
         e = torch.cat((e_dist, e_values), dim=3)  # B x num_nodes x num_nodes x hidden_dim
 
         # eq 4 and 5
@@ -236,6 +235,6 @@ class GraphNet(nn.Module):
             x, e = gcn_layer(x, e)  # B x num_nodes x hidden_dim, B x num_nodes x num_nodes x hidden_dim
 
         # eq 6
-        y_edge_preds = self.mlp_edges(e)  # B x num_nodes x num_nodes x 2
+        y_edge_pred = self.mlp_edges(e)  # B x num_nodes x num_nodes x 2
 
-        return y_edge_preds
+        return y_edge_pred

@@ -5,6 +5,12 @@ import torch
 MODELS_DIR = Path(__file__).parent.parent / 'models'
 
 
+def get_device():
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+    return device
+
+
 def save_model(model, filename='model.pt', overwrite=False):
     """
     Saves model to disk.

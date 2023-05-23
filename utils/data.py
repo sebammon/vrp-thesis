@@ -13,7 +13,7 @@ from utils.solver import Solver
 SCALING_FACTOR = 1_000
 
 VEHICLE_OPTIONS = {
-    "10": (4, 25),
+    "10": (4, 30),
     "20": (5, 40)
 }
 

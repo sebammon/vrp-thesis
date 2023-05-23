@@ -29,6 +29,9 @@ class BeamSearch:
         self.float = torch.float32
         self.long = torch.int64
 
+        assert len(trans_probs.shape) == 3, "transition probabilities need to be 3-dimensional"
+        assert trans_probs.size(1) == trans_probs.size(2), "transition probabilities are not square"
+
         # all transition probabilities
         self.trans_probs = trans_probs.type(self.float)
         self.demands = demands
@@ -36,9 +39,6 @@ class BeamSearch:
         self.num_nodes = trans_probs.size(1)
         self.num_vehicles = num_vehicles
         self.vehicle_capacity = vehicle_capacity
-
-        assert len(trans_probs.shape) == 3, "transition probabilities need to be 3-dimensional"
-        assert trans_probs.size(1) == trans_probs.size(2), "transition probabilities are not square"
 
         if random_start:
             # starting at random nodes
