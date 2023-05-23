@@ -1,5 +1,6 @@
 import pickle
 import sys
+import typing as t
 
 import numpy as np
 import torch
@@ -241,7 +242,7 @@ class VRPData:
 
 
 class VRPDataset(Dataset):
-    def __init__(self, data: list[DotDict]):
+    def __init__(self, data: t.List[DotDict]):
         super().__init__()
         self.data = data
 
