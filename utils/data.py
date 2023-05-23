@@ -13,7 +13,6 @@ from utils.solver import Solver
 SCALING_FACTOR = 1_000
 
 VEHICLE_OPTIONS = {
-    "10": (4, 30),
     "20": (5, 40)
 }
 
@@ -55,14 +54,14 @@ def get_vehicle_config(num_nodes):
 def generate_vrp_instance(num_nodes, random_depot_location=True, demand_low=1, demand_high=10):
     """
     Generates a random instance of the CVRP.
-    :param num_nodes: number of nodes to create
+    :param int num_nodes: number of customer nodes to create
     :param bool random_depot_location: depot location is randomly selected if True, otherwise fixed to (0.5, 0.5)
-    :param demand_low: demand lower bound
-    :param demand_high: demand upper bound
+    :param int demand_low: demand lower bound
+    :param int demand_high: demand upper bound
     :return: (num_nodes, 3) locations and demands of the nodes
     """
-    locations = np.random.rand(num_nodes, 2)
-    demands = np.random.randint(demand_low, demand_high, num_nodes)
+    locations = np.random.rand(num_nodes + 1, 2)
+    demands = np.random.randint(demand_low, demand_high, num_nodes + 1)
 
     if not random_depot_location:
         locations[0] = [0.5, 0.5]
@@ -100,30 +99,31 @@ def create_data_model(locations, demands, vehicle_capacity, num_vehicles, depot_
     return data_model
 
 
-def solve(instance, time_limit=3):
+def solve(instance, time_limit=3, first_solution_strategy='SAVINGS'):
     """
     Solves the given instance of the CVRP.
     :param instance: (n, 3) instance of the CVRP with locations and demands
     :param int time_limit: time limit for the solver
+    :param str first_solution_strategy: first solution strategy for the solver
     :return: (dict, Solver) solution and solver object
     """
-    num_vehicles, vehicle_capacity = get_vehicle_config(instance.shape[0])
+    num_vehicles, vehicle_capacity = get_vehicle_config(instance.shape[0] - 1)
     data_model = create_data_model(locations=instance[:, :2],
                                    demands=instance[:, 2],
                                    vehicle_capacity=vehicle_capacity,
                                    num_vehicles=num_vehicles)
-    vrp_solver = Solver(data_model, time_limit=time_limit, first_solution_strategy='SAVINGS')
+    vrp_solver = Solver(data_model, time_limit=time_limit, first_solution_strategy=first_solution_strategy)
     solution = vrp_solver.solve()
 
     return solution, vrp_solver
 
 
-def generate_and_solve(num_nodes, random_depot_location=True, time_limit=3):
+def generate_and_solve(num_nodes, time_limit=3, random_depot_location=True):
     """
     Generate and solve an instance of the CVRP.
     :param num_nodes: number of nodes to generate
-    :param bool random_depot_location: depot location is randomly selected if True, otherwise fixed to (0.5, 0.5)
     :param int time_limit: time limit for the solver
+    :param bool random_depot_location: depot location is randomly selected if True, otherwise fixed to (0.5, 0.5)
     :return: dict solution
     """
     instance = generate_vrp_instance(num_nodes, random_depot_location=random_depot_location)
@@ -135,7 +135,7 @@ def generate_and_solve(num_nodes, random_depot_location=True, time_limit=3):
         return solution
 
     # try again
-    return generate_and_solve(num_nodes, random_depot_location, time_limit)
+    return generate_and_solve(num_nodes, time_limit, random_depot_location)
 
 
 def distance_matrix(node_coords):
@@ -208,7 +208,7 @@ class VRPData:
         node_features = np.array(instance, copy=True)
 
         if normalize_demand:
-            _num_vehicles, vehicle_capacity = get_vehicle_config(instance.shape[0])
+            _num_vehicles, vehicle_capacity = get_vehicle_config(instance.shape[0] - 1)
             node_features[:, 2] = node_features[:, 2] / vehicle_capacity  # normalise demand
 
         dist_matrix = distance_matrix(node_features[:, :2])
