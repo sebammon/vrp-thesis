@@ -17,7 +17,7 @@ class EdgeNorm(nn.Module):
         Args:
             e: Edge features (batch x num_nodes x num_nodes x hidden_dim)
         """
-        # transpose because batch norm works on the second dim
+        # transpose because batch norm works on the third dim
         e_trans = e.transpose(1, 3).contiguous()  # B x hidden_dim x num_nodes x num_nodes
         e_trans_batch_norm = self.batch_norm(e_trans)
         e_batch_norm = e_trans_batch_norm.transpose(1, 3).contiguous()  # B x num_nodes x num_nodes x hidden_dim
@@ -192,19 +192,19 @@ class GraphNet(nn.Module):
         # configs
         self.hidden_dim = config.hidden_dim
         self.node_features = config.node_features
-        self.edge_weight_features = config.edge_weight_features
-        self.edge_values_features = config.edge_values_features
+        self.edge_distance_features = config.edge_distance_features
+        self.edge_types_features = config.edge_types_features
         self.num_gcn_layers = config.num_gcn_layers
         self.num_mlp_layers = config.num_mlp_layers
-        self.dropout = config.dropout or None
+        self.dropout = config.dropout
 
         # embeddings
         # TODO: Why is bias turned off when in the paper they don't mention anything?
         self.node_feature_embedding = nn.Linear(self.node_features, self.hidden_dim, bias=False)
-        self.distance_embedding = nn.Linear(self.edge_weight_features, self.hidden_dim // 2, bias=False)
+        self.distance_embedding = nn.Linear(self.edge_distance_features, self.hidden_dim // 2, bias=False)
         # TODO: Don't understand the use of the Embedding layer
         # 3 for the special cases 0, 1, 2 (more memory efficient)
-        self.edge_feature_embedding = nn.Embedding(self.edge_values_features, self.hidden_dim // 2)
+        self.edge_feature_embedding = nn.Embedding(self.edge_types_features, self.hidden_dim // 2)
 
         # GCN layers
         self.gcn_layers = nn.ModuleList([

@@ -209,7 +209,7 @@ class VRPData:
         node_features = np.array(instance, copy=True)
 
         if normalize_demand:
-            _num_vehicles, vehicle_capacity = get_vehicle_config(instance.shape[0] - 1)
+            _num_vehicles, vehicle_capacity = get_vehicle_config(node_features.shape[0] - 1)
             node_features[:, 2] = node_features[:, 2] / vehicle_capacity  # normalise demand
 
         dist_matrix = distance_matrix(node_features[:, :2])

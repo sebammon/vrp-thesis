@@ -2,8 +2,6 @@ from pathlib import Path
 
 import torch
 
-MODELS_DIR = Path(__file__).parent.parent / 'models'
-
 
 def get_device():
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -11,39 +9,31 @@ def get_device():
     return device
 
 
-def save_model(model, filename='model.pt', overwrite=False):
+def save_model(model, filename):
     """
     Saves model to disk.
     :param model: torch model
     :param filename: filename
-    :param overwrite: overwrite existing file
     :return: None
     """
-    if not MODELS_DIR.exists():
-        MODELS_DIR.mkdir()
+    if Path(filename).exists():
+        raise FileExistsError(f"File {filename} already exists")
 
-    if (MODELS_DIR / filename).exists():
-        if not overwrite:
-            raise FileExistsError(f"File {filename} already exists")
-
-    torch.save(model.state_dict(), MODELS_DIR / filename)
+    torch.save(model.state_dict(), filename)
 
 
 def load_model(filename):
     """
     Loads model from disk.
     :param filename: filename
-    :return: torch model
+    :return: state_dict of the model
     """
-    if not MODELS_DIR.exists():
-        raise FileNotFoundError(f"Directory {MODELS_DIR} does not exist")
-
-    if not (MODELS_DIR / filename).exists():
+    if not Path(filename).exists():
         raise FileNotFoundError(f"File {filename} does not exist")
 
-    model = torch.load(MODELS_DIR / filename)
+    state_dict = torch.load(filename)
 
-    return model
+    return state_dict
 
 
 def save_checkpoint(filename, model, optimizer, config, edge_class_weights):
@@ -61,7 +51,7 @@ def save_checkpoint(filename, model, optimizer, config, edge_class_weights):
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'class_weights': edge_class_weights
-    }, MODELS_DIR / filename)
+    }, filename)
 
 
 def load_checkpoint(filename):
@@ -70,4 +60,4 @@ def load_checkpoint(filename):
     :param str filename: filename of the checkpoint. Stored in the model directory.
     :return: (config, model_state_dict, optimizer_state_dict, class_weights)
     """
-    return torch.load(MODELS_DIR / filename)
+    return torch.load(filename)

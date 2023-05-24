@@ -1,15 +1,26 @@
 from utils.common import DotDict
 
 
-def load_config(hidden_dim=30, node_features=2, edge_weight_features=1, edge_values_features=3, num_gcn_layers=10,
-                num_mlp_layers=3):
+def load_config(**kwargs):
+    """
+    Loads the configuration for the model.
+    :param int hidden_dim: hidden dimension of the model
+    :param int node_features: number of node features
+    :param int edge_distance_features: number of edge distance features
+    :param int edge_types_features: number of edge type features
+    :param int num_gcn_layers: number of GCN layers
+    :param int num_mlp_layers: number of MLP layers
+    :param int dropout: dropout probability
+    :return: DotDict
+    """
     config = DotDict()
 
-    config.hidden_dim = hidden_dim
-    config.node_features = node_features
-    config.edge_weight_features = edge_weight_features
-    config.edge_values_features = edge_values_features
-    config.num_gcn_layers = num_gcn_layers
-    config.num_mlp_layers = num_mlp_layers
+    config.hidden_dim = kwargs.get('hidden_dim', 16)
+    config.node_features = kwargs.get('node_features', 3)
+    config.edge_distance_features = kwargs.get('edge_distance_features', 1)
+    config.edge_types_features = kwargs.get('edge_types_features', 3)
+    config.num_gcn_layers = kwargs.get('num_gcn_layers', 5)
+    config.num_mlp_layers = kwargs.get('num_mlp_layers', 3)
+    config.dropout = kwargs.get('dropout', None)
 
     return config
