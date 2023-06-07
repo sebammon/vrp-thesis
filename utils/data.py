@@ -175,8 +175,6 @@ def adjacency_matrix(num_nodes, routes):
     adj_matrix = np.zeros((num_nodes, num_nodes))
 
     for path in routes:
-        path = [0] + list(path) + [0]
-
         for i in range(len(path) - 1):
             xi, xj = path[i], path[i + 1]
 

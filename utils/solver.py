@@ -83,7 +83,10 @@ class Solver:
             while not self.routing.IsEnd(index):
                 index = self.solution.Value(self.routing.NextVar(index))
                 route.append(self.manager.IndexToNode(index))
-            routes.append(route)
+
+            # ignore empty routes
+            if len(route) > 2:
+                routes.append(route)
 
         return routes
 
