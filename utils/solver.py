@@ -13,7 +13,6 @@ class Solver:
         :param str local_search_metaheuristic: metaheuristic to use for local search
         """
         self.data = data
-        self.__solver_solution = None
         self.solution = None
         self.manager = None
         self.routing = None
@@ -69,43 +68,27 @@ class Solver:
         search_parameters.time_limit.FromSeconds(self.time_limit)
 
         # Solve the problem.
-        self.__solver_solution = self.routing.SolveWithParameters(search_parameters)
-        self.solution = self.get_solution()
+        self.solution = self.routing.SolveWithParameters(search_parameters)
 
         return self.solution
 
-    def get_solution(self):
-        if self.__solver_solution is None:
-            return None
+    def get_routes(self):
+        if self.solution is None:
+            return []
 
-        solution_data = {
-            'vehicles_used': 0,
-        }
-        routes = {}
-
-        for vehicle_id in range(self.data['num_vehicles']):
-            route = []
-            index = self.routing.Start(vehicle_id)
+        routes = []
+        for route_nbr in range(self.routing.vehicles()):
+            index = self.routing.Start(route_nbr)
+            route = [self.manager.IndexToNode(index)]
             while not self.routing.IsEnd(index):
-                node_index = self.manager.IndexToNode(index)
-                index = self.__solver_solution.Value(self.routing.NextVar(index))
+                index = self.solution.Value(self.routing.NextVar(index))
+                route.append(self.manager.IndexToNode(index))
+            routes.append(route)
 
-                if node_index != self.data['depot']:
-                    route.append(node_index)
-
-            routes[vehicle_id] = route
-
-            if len(route) > 0:
-                solution_data['vehicles_used'] += 1
-
-        solution_data['routes'] = routes
-        solution_data['total_distance'] = self.__solver_solution.ObjectiveValue()
-
-        return solution_data
+        return routes
 
     def print_solution(self):
-        """Prints solution on console."""
-        print(f'Objective: {self.__solver_solution.ObjectiveValue()}')
+        print(f'Objective: {self.solution.ObjectiveValue()}')
         total_distance = 0
         total_load = 0
         for vehicle_id in range(self.data['num_vehicles']):
@@ -118,7 +101,7 @@ class Solver:
                 route_load += self.data['demands'][node_index]
                 plan_output += ' {0} Load({1}) -> '.format(node_index, route_load)
                 previous_index = index
-                index = self.__solver_solution.Value(self.routing.NextVar(index))
+                index = self.solution.Value(self.routing.NextVar(index))
                 route_distance += self.routing.GetArcCostForVehicle(
                     previous_index, index, vehicle_id)
             plan_output += ' {0} Load({1})\n'.format(self.manager.IndexToNode(index),

@@ -1,46 +1,21 @@
-import pickle
-import sys
-import typing as t
-
 import numpy as np
 import torch
 from scipy.spatial.distance import squareform, pdist
 from sklearn.model_selection import train_test_split
+from sklearn.utils import compute_class_weight
 from torch.utils.data import Dataset
 
-from utils.common import DotDict
+from utils.common import DotDict, load_pickle
 from utils.solver import Solver
 
-SCALING_FACTOR = 1_000
+SCALING_FACTOR = 1000
 
 VEHICLE_OPTIONS = {
-    "20": (5, 40)
+    "10": (3, 30),
+    "20": (5, 40),
+    "50": (9, 50),
+    "100": (15, 60),
 }
-
-
-def store_pickle(obj, file):
-    """
-    Stores the given object in a pickle file.
-    :param obj: object to store
-    :param file: location of pickle file
-    :return: None
-    """
-    with open(file, 'wb') as f:
-        pickle.dump(obj, f)
-
-
-def load_pickle(file):
-    """
-    Loads the given pickle file.
-    :param file: location of pickle file
-    :return: Any
-    """
-    with open(file, 'rb') as f:
-        return pickle.load(f)
-
-
-def get_errors(results):
-    return [inst for inst in results if not inst.get('routes')]
 
 
 def get_vehicle_config(num_nodes):
@@ -52,20 +27,16 @@ def get_vehicle_config(num_nodes):
     return VEHICLE_OPTIONS[str(num_nodes)]
 
 
-def generate_vrp_instance(num_nodes, random_depot_location=True, demand_low=1, demand_high=10):
+def generate_instance(num_nodes, demand_low=1, demand_high=10):
     """
     Generates a random instance of the CVRP.
     :param int num_nodes: number of customer nodes to create
-    :param bool random_depot_location: depot location is randomly selected if True, otherwise fixed to (0.5, 0.5)
     :param int demand_low: demand lower bound
     :param int demand_high: demand upper bound
     :return: (num_nodes, 3) locations and demands of the nodes
     """
     locations = np.random.rand(num_nodes + 1, 2)
     demands = np.random.randint(demand_low, demand_high, num_nodes + 1)
-
-    if not random_depot_location:
-        locations[0] = [0.5, 0.5]
 
     demands[0] = 0
 
@@ -100,12 +71,12 @@ def create_data_model(locations, demands, vehicle_capacity, num_vehicles, depot_
     return data_model
 
 
-def solve(instance, time_limit=3, first_solution_strategy='SAVINGS'):
+def solve(instance, **kwargs):
     """
     Solves the given instance of the CVRP.
     :param instance: (n, 3) instance of the CVRP with locations and demands
-    :param int time_limit: time limit for the solver
-    :param str first_solution_strategy: first solution strategy for the solver
+    :keyword int time_limit: time limit for the solver
+    :keyword str first_solution_strategy: first solution strategy for the solver
     :return: (dict, Solver) solution and solver object
     """
     num_vehicles, vehicle_capacity = get_vehicle_config(instance.shape[0] - 1)
@@ -113,30 +84,76 @@ def solve(instance, time_limit=3, first_solution_strategy='SAVINGS'):
                                    demands=instance[:, 2],
                                    vehicle_capacity=vehicle_capacity,
                                    num_vehicles=num_vehicles)
-    vrp_solver = Solver(data_model, time_limit=time_limit, first_solution_strategy=first_solution_strategy)
-    solution = vrp_solver.solve()
+    solver = Solver(data_model, **kwargs)
+    solver.solve()
 
-    return solution, vrp_solver
+    routes = solver.get_routes()
+
+    return routes, solver
 
 
-def generate_and_solve(num_nodes, time_limit=3, random_depot_location=True):
+def generate_and_solve(num_nodes, time_limit=3):
     """
     Generate and solve an instance of the CVRP.
     :param num_nodes: number of nodes to generate
     :param int time_limit: time limit for the solver
-    :param bool random_depot_location: depot location is randomly selected if True, otherwise fixed to (0.5, 0.5)
     :return: dict solution
     """
-    instance = generate_vrp_instance(num_nodes, random_depot_location=random_depot_location)
-    solution, _solver = solve(instance, time_limit)
+    instance = generate_instance(num_nodes)
+    routes, _solver = solve(instance, time_limit=time_limit)
 
-    if solution:
-        solution['instance'] = instance
+    if len(routes) > 0:
+        solution = {
+            'instance': instance,
+            'routes': routes,
+        }
 
         return solution
 
     # try again
-    return generate_and_solve(num_nodes, time_limit, random_depot_location)
+    return generate_and_solve(num_nodes, time_limit)
+
+
+def distance_from_adj_matrix(batch_targets, batch_dist_matrix):
+    """
+    Computes the total distance for a batch of adjacency matrices.
+    :param batch_targets: Adjacency matrices
+    :param batch_dist_matrix: Distance matrices
+    :return: (batch_size,) total distance for each adjacency matrix
+    """
+    return (batch_targets * batch_dist_matrix).sum(-1).sum(-1) / 2
+
+
+def distance_from_sparse_matrix(batch_targets, batch_dist_matrix):
+    """
+    Computes the total distance for a batch of sparse matrices.
+    :param batch_targets: Sparse matrices
+    :param batch_dist_matrix: Distance matrices
+    :return: (batch_size,) total distance for each sparse matrix
+    """
+
+    # don't need to divide by 2 since the matrix is sparse (not symmetric)
+    return (batch_targets * batch_dist_matrix).sum(-1).sum(-1).to_dense()
+
+
+def sparse_matrix_from_routes(routes, num_nodes):
+    """
+    Converts a batch of routes to a batch of sparse adjacency matrices.
+    :param routes: Batch of route
+    :param num_nodes: Number of nodes
+    :return: Batch of sparse adjacency matrices
+    """
+    rolled = routes.roll(-1)
+    indices = torch.stack((routes, rolled), 1)
+    values = torch.ones_like(routes)
+
+    sparse_tensors = []
+
+    for i, v in zip(indices, values):
+        s = torch.sparse_coo_tensor(i, v, size=(num_nodes, num_nodes))
+        sparse_tensors.append(s)
+
+    return torch.stack(sparse_tensors)
 
 
 def distance_matrix(node_coords):
@@ -152,12 +169,12 @@ def adjacency_matrix(num_nodes, routes):
     """
     Computes the adjacency matrix for a set of routes.
     :param int num_nodes: number of nodes
-    :param dict routes: routes
+    :param routes: (m, n) routes
     :return: (n, n) adjacency matrix
     """
     adj_matrix = np.zeros((num_nodes, num_nodes))
 
-    for path in routes.values():
+    for path in routes:
         path = [0] + list(path) + [0]
 
         for i in range(len(path) - 1):
@@ -172,7 +189,7 @@ def adjacency_matrix(num_nodes, routes):
     return adj_matrix
 
 
-def edge_feature_matrix(dist_matrix, k=3):
+def edge_feature_matrix(dist_matrix, k):
     """
     Computes the edge feature matrix
     :param dist_matrix: (n, n) distance matrix
@@ -180,6 +197,9 @@ def edge_feature_matrix(dist_matrix, k=3):
     :return: (n, n) edge feature matrix
     """
     edge_matrix = np.zeros_like(dist_matrix)
+
+    if k is None:
+        k = len(dist_matrix)
 
     # find k-nearst neighbors
     for i in range(len(dist_matrix)):
@@ -196,27 +216,73 @@ def edge_feature_matrix(dist_matrix, k=3):
     return edge_matrix
 
 
-class VRPData:
-    @classmethod
-    def process_dataset(cls, dataset, **kwargs):
-        return [cls.process_one(instance, **kwargs) for instance in dataset]
+def load_and_split_dataset(file, test_size=0.2, shuffle=True, random_state=42):
+    """
+    Loads and splits the dataset.
+    :param file: location of the dataset
+    :param test_size: train split
+    :param shuffle: shuffle the dataset
+    :param random_state: random state
+    :return: (list, list) train and test split
+    """
+    dataset = load_pickle(file)
+    train_dataset, test_dataset = train_test_split(dataset, test_size=test_size, random_state=random_state,
+                                                   shuffle=shuffle)
 
-    @classmethod
-    def process_one(cls, solution, k=3, normalize_demand=True):
-        instance = solution['instance']
-        routes = solution['routes']
+    return train_dataset, test_dataset
 
-        node_features = np.array(instance, copy=True)
 
-        if normalize_demand:
-            _num_vehicles, vehicle_capacity = get_vehicle_config(node_features.shape[0] - 1)
-            node_features[:, 2] = node_features[:, 2] / vehicle_capacity  # normalise demand
+def process_datasets(*raw_datasets, **kwargs):
+    """
+    Loads and processes the datasets.
+    :argument list raw_datasets: list of raw datasets
+    :keyword int k: number of nearest neighbors
+    :return: tuple of datasets
+    """
+
+    return tuple(VRPDataset(dataset, **kwargs) for dataset in list(*raw_datasets))
+
+
+def dataset_class_weight(dataset):
+    """
+    Computes the class weights for the dataset.
+    :param dataset: dataset
+    :return: class weights
+    """
+    targets = np.array([target_edges.detach().numpy() for _, target_edges in dataset])
+
+    class_labels = targets.flatten()
+
+    edge_class_weights = compute_class_weight('balanced',
+                                              classes=np.unique(class_labels),
+                                              y=class_labels)
+    edge_class_weights = torch.tensor(edge_class_weights, dtype=torch.float)
+
+    return edge_class_weights
+
+
+class VRPDataset(Dataset):
+    def __init__(self, raw_dataset, k=3, normalise_demand=True):
+        super().__init__()
+        self.data = []
+        self.k = k
+        self.normalise_demand = normalise_demand
+
+        self.process_dataset(raw_dataset)
+
+    def __process_one(self, instance):
+        routes = instance['routes']
+        node_features = instance['instance']
+
+        if self.normalise_demand:
+            _, vehicle_capacity = get_vehicle_config(node_features.shape[0] - 1)
+            node_features[:, 2] = node_features[:, 2] / vehicle_capacity
 
         dist_matrix = distance_matrix(node_features[:, :2])
+        edge_feat_matrix = edge_feature_matrix(dist_matrix, k=self.k)
         target_matrix = adjacency_matrix(node_features.shape[0], routes)
-        edge_feat_matrix = edge_feature_matrix(dist_matrix, k=k)
 
-        data = DotDict({
+        return DotDict({
             'node_features': node_features,
             'dist_matrix': dist_matrix,
             'edge_feat_matrix': edge_feat_matrix,
@@ -224,27 +290,13 @@ class VRPData:
             'routes': routes
         })
 
-        return data
+    def process_dataset(self, results):
+        for instance in results:
+            data = self.__process_one(instance)
+            self.data.append(data)
 
-    @classmethod
-    def load(cls, results, test_size=0.2, random_state=42, **kwargs):
-        errors = get_errors(results)
-
-        if len(errors) > 0:
-            print("Errors found in some instances, remove them from the dataset.")
-            sys.exit(1)
-
-        processed_dataset = cls.process_dataset(results, **kwargs)
-        train, test = train_test_split(processed_dataset, test_size=test_size, random_state=random_state, shuffle=True)
-        train, test = VRPDataset(train), VRPDataset(test)
-
-        return DotDict({"train": train, "test": test})
-
-
-class VRPDataset(Dataset):
-    def __init__(self, data: t.List[DotDict]):
-        super().__init__()
-        self.data = data
+    def class_weights(self):
+        return dataset_class_weight(self)
 
     def __len__(self):
         return len(self.data)
@@ -252,6 +304,7 @@ class VRPDataset(Dataset):
     def __getitem__(self, idx):
         data = self.data[idx]
 
+        num_vehicles = torch.tensor(len(data.routes), dtype=torch.int64)
         node_features = torch.tensor(data.node_features, dtype=torch.float32)
         dist_matrix = torch.tensor(data.dist_matrix, dtype=torch.float32)
         edge_feat_matrix = torch.tensor(data.edge_feat_matrix, dtype=torch.int64)
@@ -259,9 +312,7 @@ class VRPDataset(Dataset):
 
         features = {"node_features": node_features,
                     "dist_matrix": dist_matrix,
-                    "edge_feat_matrix": edge_feat_matrix}
+                    "edge_feat_matrix": edge_feat_matrix,
+                    "num_vehicles": num_vehicles}
 
         return features, target
-
-    def __repr__(self):
-        return f"VRPDataset(len={len(self.data)})"

@@ -198,21 +198,19 @@ class BeamSearch:
         """
         assert len(self.next_nodes) == self.num_iterations + 1
 
+        paths = torch.ones(self.batch_size, len(self.next_nodes)).type(self.long)
         prev_pointer = torch.ones(self.batch_size, 1).type(self.long) * beam_idx
         last_node = self.next_nodes[-1].gather(1, prev_pointer)
 
-        path = [last_node]
+        paths[:, -1] = last_node.view(1, self.batch_size)
 
         for i in range(len(self.parent_pointer) - 1, -1, -1):
             prev_pointer = self.parent_pointer[i].gather(1, prev_pointer)
             last_node = self.next_nodes[i].gather(1, prev_pointer)
 
-            path.append(last_node)
+            paths[:, i] = last_node.view(1, self.batch_size)
 
-        path = list(reversed(path))
-        path = torch.cat(path, dim=-1)
-
-        return path
+        return paths
 
     def validate(self, beam, batch_idx=None, beam_idx=None):
         bin_count = torch.bincount(beam)
