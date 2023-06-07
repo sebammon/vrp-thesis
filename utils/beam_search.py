@@ -19,10 +19,10 @@ class BeamSearch:
     """
 
     def __init__(self, trans_probs, beam_width=1, demands=None, num_vehicles=1, vehicle_capacity=1,
-                 random_start=False, allow_consecutive_depot_visits=True):
+                 random_start=False, allow_consecutive_visits=False):
         # beam-search parameters
         self.beam_width = beam_width
-        self.allow_consecutive_depot_visits = allow_consecutive_depot_visits
+        self.allow_consecutive_visits = allow_consecutive_visits
 
         # TODO: Move tensors to GPU device for faster computation
         self.device = None
@@ -171,10 +171,11 @@ class BeamSearch:
         self.depot_visits_counter += visited_nodes_mask[..., 0]  # batch_size x beam_width x num_nodes[0]
         enable_depot_visit = torch.lt(self.depot_visits_counter, self.num_vehicles).type(self.float)
 
-        if not self.allow_consecutive_depot_visits:
-            # mask if just visited
+        if not self.allow_consecutive_visits:
+            # don't visit depot if it's just been visited
             enable_depot_visit *= unvisited_update_mask[..., 0]
 
+        # TODO: remove capacity masking
         if self.demands is not None:
             # decrement remaining capacity
             loads = self.demands.gather(1, nodes)
