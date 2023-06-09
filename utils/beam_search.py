@@ -25,7 +25,7 @@ class BeamSearch:
         self.allow_consecutive_visits = allow_consecutive_visits
 
         # TODO: Move tensors to GPU device for faster computation
-        self.device = None
+        self.device = trans_probs.device
         self.float = torch.float32
         self.long = torch.int64
 
@@ -47,15 +47,15 @@ class BeamSearch:
             # starting at node zero
             start_nodes = torch.zeros(self.batch_size, self.beam_width)
 
-        self.start_nodes = start_nodes.type(self.long)
-        self.depot_visits_counter = torch.zeros(self.batch_size, self.beam_width)
-        self.remaining_capacity = torch.ones(self.batch_size, self.beam_width) * self.vehicle_capacity
+        self.start_nodes = start_nodes.type(self.long).to(self.device)
+        self.depot_visits_counter = torch.zeros(self.batch_size, self.beam_width).to(self.device)
+        self.remaining_capacity = torch.ones(self.batch_size, self.beam_width, device=self.device) * self.vehicle_capacity
 
         # mask for removing visited nodes etc.
-        self.unvisited_mask = torch.ones(self.batch_size, self.beam_width, self.num_nodes).type(self.float)
+        self.unvisited_mask = torch.ones(self.batch_size, self.beam_width, self.num_nodes).type(self.float).to(self.device)
 
         # transition probability scores up-until current timestep
-        self.scores = torch.zeros(self.batch_size, self.beam_width).type(self.float)
+        self.scores = torch.zeros(self.batch_size, self.beam_width).type(self.float).to(self.device)
 
         # pointers to parents for each timestep
         self.parent_pointer = []
@@ -127,7 +127,7 @@ class BeamSearch:
 
         # mask out nodes (based on conditions)
         beam_prob = beam_prob * self.mask
-        # beam_prob[..., 0] += 1e-25  # always make the depot slightly available
+        beam_prob += 1e-25  # avoid creating zero probability tours
 
         beam_prob = beam_prob.view(beam_prob.size(0), -1)  # flatten to (b x beam_width * num_nodes)
 
@@ -159,7 +159,7 @@ class BeamSearch:
 
         :param nodes: (batch_size, beam_width) of new node indices
         """
-        index = torch.arange(0, self.num_nodes, dtype=self.long).expand_as(self.unvisited_mask)
+        index = torch.arange(0, self.num_nodes, dtype=self.long, device=self.device).expand_as(self.unvisited_mask)
         new_nodes = nodes.unsqueeze(2).expand_as(self.unvisited_mask)
 
         visited_nodes_mask = torch.eq(index, new_nodes).type(self.float)
@@ -199,8 +199,8 @@ class BeamSearch:
         """
         assert len(self.next_nodes) == self.num_iterations + 1
 
-        paths = torch.ones(self.batch_size, len(self.next_nodes)).type(self.long)
-        prev_pointer = torch.ones(self.batch_size, 1).type(self.long) * beam_idx
+        paths = torch.ones(self.batch_size, len(self.next_nodes)).type(self.long).to(self.device)
+        prev_pointer = torch.ones(self.batch_size, 1).type(self.long).to(self.device) * beam_idx
         last_node = self.next_nodes[-1].gather(1, prev_pointer)
 
         paths[:, -1] = last_node.view(1, self.batch_size)
