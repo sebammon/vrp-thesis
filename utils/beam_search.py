@@ -201,7 +201,6 @@ class BeamSearch:
         # reset depot visit
         if self.demands is None:
             self.unvisited_mask[..., 0] = enable_depot_visit
-        print(self.unvisited_mask)
 
     def get_beam(self, beam_idx):
         """
