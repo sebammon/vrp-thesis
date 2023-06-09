@@ -28,12 +28,17 @@ class BeamSearch:
         self.float = torch.float32
         self.long = torch.int64
 
+        assert isinstance(trans_probs, torch.Tensor), "transition probabilities need to be a tensor"
         assert len(trans_probs.shape) == 3, "transition probabilities need to be 3-dimensional"
         assert trans_probs.size(1) == trans_probs.size(2), "transition probabilities are not square"
 
+        if demands is not None:
+            assert isinstance(demands, torch.Tensor), "demands need to be a tensor"
+            assert len(demands.shape) == 2, "demands need to be 2-dimensional"
+
         # all transition probabilities
         self.trans_probs = trans_probs.type(self.float)
-        self.demands = demands
+        self.demands = demands.to(self.device) if demands is not None else None
         self.batch_size = trans_probs.size(0)
         self.num_nodes = trans_probs.size(1)
         self.num_vehicles = num_vehicles
@@ -52,7 +57,7 @@ class BeamSearch:
                                              device=self.device) * self.vehicle_capacity
 
         # mask for removing visited nodes etc.
-        self.unvisited_mask = torch.ones(self.batch_size, self.beam_width, self.num_nodes, dtype=self.float,
+        self.unvisited_mask = torch.ones(self.batch_size, self.beam_width, self.num_nodes, dtype=self.long,
                                          device=self.device)
 
         # transition probability scores up-until current timestep
@@ -89,23 +94,26 @@ class BeamSearch:
         capacity = self.remaining_capacity.unsqueeze(2)
 
         # batch_size x beam_width x num_nodes (same as visited_mask)
-        return torch.le(demand, capacity).type(self.long)
+        mask = torch.le(demand, capacity).type(self.long)
+
+        return mask
 
     @property
     def mask(self):
-        current_mask = self.unvisited_mask
-
-        # mask out depot node that was just visited
-        if len(self.next_nodes) > 1 and not self.allow_consecutive_visits:
-            mask_depot_node = 1 - torch.eq(self.next_nodes[-2], 0).type(self.float)
-            current_mask[..., 0] = current_mask[..., 0] * mask_depot_node
+        mask = self.unvisited_mask.clone()
 
         if self.demands is not None:
-            # maybe the capacity masking isn't needed
-            current_mask *= self.capacity_mask
-            current_mask[..., 0] = self.capacity_mask[..., 0]
+            remaining_nodes_available = self.capacity_mask.sum(-1)
+            # only depot available
+            mask[..., 0] = torch.eq(remaining_nodes_available, 1).type(self.long)
+            mask *= self.capacity_mask
 
-        return current_mask
+        elif len(self.next_nodes) > 1 and not self.allow_consecutive_visits:
+            # mask out depot node that was just visited
+            mask_depot_node = 1 - torch.eq(self.next_nodes[-2], 0).type(self.float)
+            mask[..., 0] = mask[..., 0] * mask_depot_node
+
+        return mask
 
     def search(self):
         """
@@ -168,17 +176,16 @@ class BeamSearch:
         index = torch.arange(0, self.num_nodes, dtype=self.long, device=self.device).expand_as(self.unvisited_mask)
         new_nodes = nodes.unsqueeze(2).expand_as(self.unvisited_mask)
 
-        visited_nodes_mask = torch.eq(index, new_nodes).type(self.float)
+        visited_nodes_mask = torch.eq(index, new_nodes).type(self.long)
 
         # set the mask = 0 at the new_node_idx positions
         unvisited_update_mask = 1 - visited_nodes_mask
 
         # increment depot counter when visited
         self.depot_visits_counter += visited_nodes_mask[..., 0]  # batch_size x beam_width x num_nodes[0]
-        enable_depot_visit = torch.lt(self.depot_visits_counter, self.num_vehicles).type(self.float)
+        enable_depot_visit = torch.lt(self.depot_visits_counter, self.num_vehicles).type(self.long)
         enable_depot_visit *= unvisited_update_mask[..., 0]
 
-        # TODO: remove capacity masking
         if self.demands is not None:
             # decrement remaining capacity
             loads = self.demands.gather(1, nodes)
@@ -192,8 +199,8 @@ class BeamSearch:
         self.unvisited_mask *= unvisited_update_mask
 
         # reset depot visit
-        self.unvisited_mask[..., 0] = enable_depot_visit
-
+        if self.demands is None:
+            self.unvisited_mask[..., 0] = enable_depot_visit
         print(self.unvisited_mask)
 
     def get_beam(self, beam_idx):
