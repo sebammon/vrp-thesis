@@ -124,36 +124,23 @@ def distance_from_adj_matrix(batch_targets, batch_dist_matrix):
     return (batch_targets * batch_dist_matrix).sum(-1).sum(-1) / 2
 
 
-def distance_from_sparse_matrix(batch_targets, batch_dist_matrix):
+def adj_matrix_from_routes(routes, num_nodes):
     """
-    Computes the total distance for a batch of sparse matrices.
-    :param batch_targets: Sparse matrices
-    :param batch_dist_matrix: Distance matrices
-    :return: (batch_size,) total distance for each sparse matrix
-    """
-
-    # don't need to divide by 2 since the matrix is sparse (not symmetric)
-    return (batch_targets * batch_dist_matrix).sum(-1).sum(-1).to_dense()
-
-
-def sparse_matrix_from_routes(routes, num_nodes):
-    """
-    Converts a batch of routes to a batch of sparse adjacency matrices.
+    Converts a batch of routes to a batch of adjacency matrices.
     :param routes: Batch of route
     :param num_nodes: Number of nodes
-    :return: Batch of sparse adjacency matrices
+    :return: Batch of adjacency matrices
     """
-    rolled = routes.roll(-1)
-    indices = torch.stack((routes, rolled), 1)
-    values = torch.ones_like(routes)
+    routes_rolled = np.roll(routes, -1)
+    non_zero_entries = np.stack((routes, routes_rolled), 2)
 
-    sparse_tensors = []
+    matrix = np.zeros((routes.shape[0], num_nodes, num_nodes))
 
-    for i, v in zip(indices, values):
-        s = torch.sparse_coo_tensor(i, v, size=(num_nodes, num_nodes))
-        sparse_tensors.append(s)
+    for i, indices in enumerate(non_zero_entries):
+        matrix[i, indices[:, 0], indices[:, 1]] = 1
+        matrix[i, indices[:, 1], indices[:, 0]] = 1
 
-    return torch.stack(sparse_tensors)
+    return matrix
 
 
 def distance_matrix(node_coords):

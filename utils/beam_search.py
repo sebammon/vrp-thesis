@@ -24,7 +24,6 @@ class BeamSearch:
         self.beam_width = beam_width
         self.allow_consecutive_visits = allow_consecutive_visits
 
-        # TODO: Move tensors to GPU device for faster computation
         self.device = trans_probs.device
         self.float = torch.float32
         self.long = torch.int64
@@ -48,14 +47,16 @@ class BeamSearch:
             start_nodes = torch.zeros(self.batch_size, self.beam_width)
 
         self.start_nodes = start_nodes.type(self.long).to(self.device)
-        self.depot_visits_counter = torch.zeros(self.batch_size, self.beam_width).to(self.device)
-        self.remaining_capacity = torch.ones(self.batch_size, self.beam_width, device=self.device) * self.vehicle_capacity
+        self.depot_visits_counter = torch.zeros(self.batch_size, self.beam_width, device=self.device)
+        self.remaining_capacity = torch.ones(self.batch_size, self.beam_width,
+                                             device=self.device) * self.vehicle_capacity
 
         # mask for removing visited nodes etc.
-        self.unvisited_mask = torch.ones(self.batch_size, self.beam_width, self.num_nodes).type(self.float).to(self.device)
+        self.unvisited_mask = torch.ones(self.batch_size, self.beam_width, self.num_nodes, dtype=self.float,
+                                         device=self.device)
 
         # transition probability scores up-until current timestep
-        self.scores = torch.zeros(self.batch_size, self.beam_width).type(self.float).to(self.device)
+        self.scores = torch.zeros(self.batch_size, self.beam_width, dtype=self.float, device=self.device)
 
         # pointers to parents for each timestep
         self.parent_pointer = []
@@ -93,6 +94,11 @@ class BeamSearch:
     @property
     def mask(self):
         current_mask = self.unvisited_mask
+
+        # mask out depot node that was just visited
+        if len(self.next_nodes) > 1 and not self.allow_consecutive_visits:
+            mask_depot_node = 1 - torch.eq(self.next_nodes[-2], 0).type(self.float)
+            current_mask[..., 0] = current_mask[..., 0] * mask_depot_node
 
         if self.demands is not None:
             # maybe the capacity masking isn't needed
@@ -171,10 +177,6 @@ class BeamSearch:
         self.depot_visits_counter += visited_nodes_mask[..., 0]  # batch_size x beam_width x num_nodes[0]
         enable_depot_visit = torch.lt(self.depot_visits_counter, self.num_vehicles).type(self.float)
 
-        if not self.allow_consecutive_visits:
-            # don't visit depot if it's just been visited
-            enable_depot_visit *= unvisited_update_mask[..., 0]
-
         # TODO: remove capacity masking
         if self.demands is not None:
             # decrement remaining capacity
@@ -190,6 +192,8 @@ class BeamSearch:
 
         # reset depot visit
         self.unvisited_mask[..., 0] = enable_depot_visit
+
+        # print(self.unvisited_mask)
 
     def get_beam(self, beam_idx):
         """
