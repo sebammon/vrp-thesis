@@ -176,6 +176,7 @@ class BeamSearch:
         # increment depot counter when visited
         self.depot_visits_counter += visited_nodes_mask[..., 0]  # batch_size x beam_width x num_nodes[0]
         enable_depot_visit = torch.lt(self.depot_visits_counter, self.num_vehicles).type(self.float)
+        enable_depot_visit *= unvisited_update_mask[..., 0]
 
         # TODO: remove capacity masking
         if self.demands is not None:
@@ -193,7 +194,7 @@ class BeamSearch:
         # reset depot visit
         self.unvisited_mask[..., 0] = enable_depot_visit
 
-        # print(self.unvisited_mask)
+        print(self.unvisited_mask)
 
     def get_beam(self, beam_idx):
         """
