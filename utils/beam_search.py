@@ -21,14 +21,14 @@ class BeamSearch:
     """
 
     def __init__(
-        self,
-        trans_probs,
-        num_vehicles,
-        beam_width=1,
-        demands=None,
-        vehicle_capacity=1,
-        random_start=False,
-        allow_consecutive_visits=False,
+            self,
+            trans_probs,
+            num_vehicles,
+            beam_width=1,
+            demands=None,
+            vehicle_capacity=1,
+            random_start=False,
+            allow_consecutive_visits=False,
     ):
         # beam-search parameters
         self.beam_width = beam_width
@@ -42,7 +42,7 @@ class BeamSearch:
             trans_probs, torch.Tensor
         ), "transition probabilities need to be a tensor"
         assert (
-            len(trans_probs.shape) == 3
+                len(trans_probs.shape) == 3
         ), "transition probabilities need to be 3-dimensional"
         assert trans_probs.size(1) == trans_probs.size(
             2
@@ -74,8 +74,8 @@ class BeamSearch:
             self.batch_size, self.beam_width, device=self.device
         )
         self.remaining_capacity = (
-            torch.ones(self.batch_size, self.beam_width, device=self.device)
-            * self.vehicle_capacity
+                torch.ones(self.batch_size, self.beam_width, device=self.device)
+                * self.vehicle_capacity
         )
 
         # mask for removing visited nodes etc.
@@ -124,6 +124,7 @@ class BeamSearch:
 
         # batch_size x beam_width x num_nodes (same as visited_mask)
         mask = torch.le(demand, capacity).type(self.long)
+        mask[..., 0] = 1  # depot always available
 
         return mask
 
@@ -193,7 +194,7 @@ class BeamSearch:
 
         # next nodes
         next_node = best_score_idx - (
-            parent_index * self.num_nodes
+                parent_index * self.num_nodes
         )  # convert flat indices back to original
         self.next_nodes.append(next_node)
 
@@ -235,6 +236,10 @@ class BeamSearch:
         ).type(self.long)
         enable_depot_visit *= unvisited_update_mask[..., 0]
 
+        # set new mask
+        self.unvisited_mask *= unvisited_update_mask
+
+        # reset depot visit
         if self.demands is not None:
             # decrement remaining capacity
             loads = self.demands.gather(1, nodes)
@@ -245,12 +250,7 @@ class BeamSearch:
                 self.vehicle_capacity * visited_nodes_mask[..., 0],
                 self.remaining_capacity,
             )
-
-        # set new mask
-        self.unvisited_mask *= unvisited_update_mask
-
-        # reset depot visit
-        if self.demands is None:
+        else:
             self.unvisited_mask[..., 0] = enable_depot_visit
 
     def get_beam(self, beam_idx):
@@ -268,7 +268,7 @@ class BeamSearch:
             .to(self.device)
         )
         prev_pointer = (
-            torch.ones(self.batch_size, 1).type(self.long).to(self.device) * beam_idx
+                torch.ones(self.batch_size, 1).type(self.long).to(self.device) * beam_idx
         )
         last_node = self.next_nodes[-1].gather(1, prev_pointer)
 
