@@ -18,7 +18,7 @@ class BeamSearch:
         [3]: https://github.com/chaitjo/graph-convnet-tsp/blob/master/utils/beamsearch.py
     """
 
-    def __init__(self, trans_probs, beam_width=1, demands=None, num_vehicles=1, vehicle_capacity=1,
+    def __init__(self, trans_probs, num_vehicles, beam_width=1, demands=None, vehicle_capacity=1,
                  random_start=False, allow_consecutive_visits=False):
         # beam-search parameters
         self.beam_width = beam_width
@@ -119,8 +119,12 @@ class BeamSearch:
         """
         Start beam search
         """
-        for step in range(self.num_iterations):
-            self.step()
+        if self.num_vehicles > 0:
+            for step in range(self.num_iterations):
+                self.step()
+        else:
+            while self.unvisited_mask.sum() > 0:
+                self.step()
 
     def step(self):
         """
@@ -208,7 +212,8 @@ class BeamSearch:
 
         :param int beam_idx: Index of the beam to construct (0 = best, ..., n = worst)
         """
-        assert len(self.next_nodes) == self.num_iterations + 1
+        if self.num_vehicles > 0:
+            assert len(self.next_nodes) == self.num_iterations + 1
 
         paths = torch.ones(self.batch_size, len(self.next_nodes)).type(self.long).to(self.device)
         prev_pointer = torch.ones(self.batch_size, 1).type(self.long).to(self.device) * beam_idx
@@ -223,20 +228,3 @@ class BeamSearch:
             paths[:, i] = last_node.view(1, self.batch_size)
 
         return paths
-
-    def validate(self, beam, batch_idx=None, beam_idx=None):
-        bin_count = torch.bincount(beam)
-
-        assert bin_count[
-                   0] <= self.num_vehicles, f"Batch={batch_idx}, beam={beam_idx}: too many depot visits {bin_count[0]} > {self.num_vehicles}\n{beam}"
-        # want them separate for sanity
-        assert torch.all(bin_count[1:] <= 1), f"Batch={batch_idx}, beam={beam_idx}: too many node visits\n{beam}"
-        assert torch.all(bin_count[1:] > 0), f"Batch={batch_idx}, beam={beam_idx}: not all nodes visited\n{beam}"
-
-    def sanity_check(self):
-        for batch_idx in range(self.batch_size):
-            for beam_idx in range(self.beam_width):
-                beams = self.get_beam(beam_idx)
-                beam = beams[batch_idx]
-
-                self.validate(beam, batch_idx=batch_idx, beam_idx=beam_idx)
