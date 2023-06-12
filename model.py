@@ -7,6 +7,7 @@ import torch.nn.functional as F
 # The normalisation layers are required because the tensors need to
 # be transposed for batch normalisation
 
+
 class EdgeNorm(nn.Module):
     def __init__(self, hidden_dim):
         super().__init__()
@@ -18,9 +19,13 @@ class EdgeNorm(nn.Module):
             e: Edge features (batch x num_nodes x num_nodes x hidden_dim)
         """
         # transpose because batch norm works on the third dim
-        e_trans = e.transpose(1, 3).contiguous()  # B x hidden_dim x num_nodes x num_nodes
+        e_trans = e.transpose(
+            1, 3
+        ).contiguous()  # B x hidden_dim x num_nodes x num_nodes
         e_trans_batch_norm = self.batch_norm(e_trans)
-        e_batch_norm = e_trans_batch_norm.transpose(1, 3).contiguous()  # B x num_nodes x num_nodes x hidden_dim
+        e_batch_norm = e_trans_batch_norm.transpose(
+            1, 3
+        ).contiguous()  # B x num_nodes x num_nodes x hidden_dim
 
         return e_batch_norm
 
@@ -38,7 +43,9 @@ class NodeNorm(nn.Module):
         # transpose because batch norm works on the second dim
         x_trans = x.transpose(1, 2).contiguous()  # B x hidden_dim x num_nodes
         x_trans_batch_norm = self.batch_norm(x_trans)
-        x_batch_norm = x_trans_batch_norm.transpose(1, 2).contiguous()  # B x num_nodes x hidden_dim
+        x_batch_norm = x_trans_batch_norm.transpose(
+            1, 2
+        ).contiguous()  # B x num_nodes x hidden_dim
 
         return x_batch_norm
 
@@ -64,8 +71,12 @@ class EdgeFeatureLayer(nn.Module):
         Vx = self.V(x)
 
         # this enables us to make use of broadcasting to get a B x num_nodes x num_nodes x hidden_dim tensor
-        Vx_cols = Vx.unsqueeze(1)  # B x num_nodes x hidden_dim => B x 1 x num_nodes x hidden_dim
-        Vx_rows = Vx.unsqueeze(2)  # B x num_nodes x hidden_dim => B x num_nodes x 1 x hidden_dim
+        Vx_cols = Vx.unsqueeze(
+            1
+        )  # B x num_nodes x hidden_dim => B x 1 x num_nodes x hidden_dim
+        Vx_rows = Vx.unsqueeze(
+            2
+        )  # B x num_nodes x hidden_dim => B x num_nodes x 1 x hidden_dim
 
         e_new = Ue + Vx_rows + Vx_cols
 
@@ -94,16 +105,20 @@ class NodeFeatureLayer(nn.Module):
         Ux = self.U(x)
         Vx = self.V(x)  # B x num_nodes x hidden_dim
 
-        Vx = Vx.unsqueeze(1)  # B x num_nodes x hidden_dim ==> B x 1 x num_nodes x hidden_dim
+        Vx = Vx.unsqueeze(
+            1
+        )  # B x num_nodes x hidden_dim ==> B x 1 x num_nodes x hidden_dim
         gateVx = edge_gate * Vx
 
         x_new = Ux + torch.sum(gateVx, dim=2) / (
-                self.epsilon + torch.sum(edge_gate, dim=2))  # B x num_nodes x hidden_dim
+            self.epsilon + torch.sum(edge_gate, dim=2)
+        )  # B x num_nodes x hidden_dim
 
         return x_new
 
 
 # == GRAPH LAYER ==
+
 
 class GraphLayer(nn.Module):
     """
@@ -161,6 +176,7 @@ class GraphLayer(nn.Module):
 
 # == MLP (Edge predictions) ==
 
+
 class MLP(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_layers):
         super().__init__()
@@ -168,10 +184,10 @@ class MLP(nn.Module):
         self.layers = nn.Sequential()
 
         for i in range(hidden_layers - 1):
-            self.layers.add_module(f'lin{i + 1}', nn.Linear(in_dim, in_dim))
-            self.layers.add_module(f'relu{i + 1}', nn.ReLU())
+            self.layers.add_module(f"lin{i + 1}", nn.Linear(in_dim, in_dim))
+            self.layers.add_module(f"relu{i + 1}", nn.ReLU())
 
-        self.layers.add_module('final', nn.Linear(in_dim, out_dim))
+        self.layers.add_module("final", nn.Linear(in_dim, out_dim))
 
     def forward(self, e):
         """
@@ -185,6 +201,7 @@ class MLP(nn.Module):
 
 
 # == MAIN NETWORK ==
+
 
 class GraphNet(nn.Module):
     def __init__(self, config):
@@ -200,19 +217,30 @@ class GraphNet(nn.Module):
 
         # embeddings
         # TODO: Why is bias turned off when in the paper they don't mention anything?
-        self.node_feature_embedding = nn.Linear(self.node_features, self.hidden_dim, bias=False)
-        self.distance_embedding = nn.Linear(self.edge_distance_features, self.hidden_dim // 2, bias=False)
+        self.node_feature_embedding = nn.Linear(
+            self.node_features, self.hidden_dim, bias=False
+        )
+        self.distance_embedding = nn.Linear(
+            self.edge_distance_features, self.hidden_dim // 2, bias=False
+        )
         # TODO: Don't understand the use of the Embedding layer
         # 3 for the special cases 0, 1, 2 (more memory efficient)
-        self.edge_feature_embedding = nn.Embedding(self.edge_types_features, self.hidden_dim // 2)
+        self.edge_feature_embedding = nn.Embedding(
+            self.edge_types_features, self.hidden_dim // 2
+        )
 
         # GCN layers
-        self.gcn_layers = nn.ModuleList([
-            GraphLayer(hidden_dim=self.hidden_dim, dropout=self.dropout) for _ in range(self.num_gcn_layers)
-        ])
+        self.gcn_layers = nn.ModuleList(
+            [
+                GraphLayer(hidden_dim=self.hidden_dim, dropout=self.dropout)
+                for _ in range(self.num_gcn_layers)
+            ]
+        )
 
         # edge prediction MLP
-        self.mlp_edges = MLP(in_dim=self.hidden_dim, out_dim=2, hidden_layers=self.num_mlp_layers)
+        self.mlp_edges = MLP(
+            in_dim=self.hidden_dim, out_dim=2, hidden_layers=self.num_mlp_layers
+        )
 
     def forward(self, node_features, distance_matrix, edge_features):
         """
@@ -226,13 +254,21 @@ class GraphNet(nn.Module):
 
         # eq 3
         dist_unsqueezed = distance_matrix.unsqueeze(3)  # B x num_nodes x num_nodes x 1
-        e_dist = self.distance_embedding(dist_unsqueezed)  # B x num_nodes x num_nodes x hidden_dim // 2
-        e_values = self.edge_feature_embedding(edge_features)  # B x num_nodes x num_nodes x hidden_dim // 2
-        e = torch.cat((e_dist, e_values), dim=3)  # B x num_nodes x num_nodes x hidden_dim
+        e_dist = self.distance_embedding(
+            dist_unsqueezed
+        )  # B x num_nodes x num_nodes x hidden_dim // 2
+        e_values = self.edge_feature_embedding(
+            edge_features
+        )  # B x num_nodes x num_nodes x hidden_dim // 2
+        e = torch.cat(
+            (e_dist, e_values), dim=3
+        )  # B x num_nodes x num_nodes x hidden_dim
 
         # eq 4 and 5
         for gcn_layer in self.gcn_layers:
-            x, e = gcn_layer(x, e)  # B x num_nodes x hidden_dim, B x num_nodes x num_nodes x hidden_dim
+            x, e = gcn_layer(
+                x, e
+            )  # B x num_nodes x hidden_dim, B x num_nodes x num_nodes x hidden_dim
 
         # eq 6
         y_edge_pred = self.mlp_edges(e)  # B x num_nodes x num_nodes x 2

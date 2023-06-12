@@ -43,7 +43,14 @@ def generate_instance(num_nodes, demand_low=1, demand_high=10):
     return np.concatenate((locations, demands.reshape(-1, 1)), axis=1, dtype=np.float32)
 
 
-def create_data_model(locations, demands, vehicle_capacity, num_vehicles, depot_index=0, scaling_factor=SCALING_FACTOR):
+def create_data_model(
+    locations,
+    demands,
+    vehicle_capacity,
+    num_vehicles,
+    depot_index=0,
+    scaling_factor=SCALING_FACTOR,
+):
     """
     Creates the data model for the solver.
     :param locations: (n, 2) array of node locations
@@ -60,13 +67,17 @@ def create_data_model(locations, demands, vehicle_capacity, num_vehicles, depot_
     dist_matrix = distance_matrix(locations) * scaling_factor
 
     # Note the conversions to int and list
-    data_model['distance_matrix'] = np.round(dist_matrix, 0).astype(int).tolist()
-    data_model['demands'] = demands.astype(int).tolist()
-    data_model['vehicle_capacities'] = np.full(num_vehicles, vehicle_capacity).astype(int).tolist()
-    data_model['num_vehicles'] = int(num_vehicles)
-    data_model['depot'] = int(depot_index)
+    data_model["distance_matrix"] = np.round(dist_matrix, 0).astype(int).tolist()
+    data_model["demands"] = demands.astype(int).tolist()
+    data_model["vehicle_capacities"] = (
+        np.full(num_vehicles, vehicle_capacity).astype(int).tolist()
+    )
+    data_model["num_vehicles"] = int(num_vehicles)
+    data_model["depot"] = int(depot_index)
 
-    assert sum(data_model['demands']) <= sum(data_model['vehicle_capacities']), "Total demand exceeds total capacity."
+    assert sum(data_model["demands"]) <= sum(
+        data_model["vehicle_capacities"]
+    ), "Total demand exceeds total capacity."
 
     return data_model
 
@@ -80,10 +91,12 @@ def solve(instance, **kwargs):
     :return: (dict, Solver) solution and solver object
     """
     num_vehicles, vehicle_capacity = get_vehicle_config(instance.shape[0] - 1)
-    data_model = create_data_model(locations=instance[:, :2],
-                                   demands=instance[:, 2],
-                                   vehicle_capacity=vehicle_capacity,
-                                   num_vehicles=num_vehicles)
+    data_model = create_data_model(
+        locations=instance[:, :2],
+        demands=instance[:, 2],
+        vehicle_capacity=vehicle_capacity,
+        num_vehicles=num_vehicles,
+    )
     solver = Solver(data_model, **kwargs)
     solver.solve()
 
@@ -104,8 +117,8 @@ def generate_and_solve(num_nodes, time_limit=3):
 
     if len(routes) > 0:
         solution = {
-            'instance': instance,
-            'routes': routes,
+            "instance": instance,
+            "routes": routes,
         }
 
         return solution
@@ -149,7 +162,7 @@ def distance_matrix(node_coords):
     :param node_coords: (n, 2) array of node coordinates
     :return: (n, n) distance matrix
     """
-    return squareform(pdist(node_coords, metric='euclidean'))
+    return squareform(pdist(node_coords, metric="euclidean"))
 
 
 def adjacency_matrix(num_nodes, routes):
@@ -188,7 +201,7 @@ def edge_feature_matrix(dist_matrix, k):
 
     # find k-nearst neighbors
     for i in range(len(dist_matrix)):
-        knns = np.argsort(dist_matrix[i])[1:k + 1]
+        knns = np.argsort(dist_matrix[i])[1 : k + 1]
         edge_matrix[i, knns] = 1  # neat trick
 
     # self connections
@@ -211,8 +224,9 @@ def load_and_split_dataset(file, test_size=0.2, shuffle=True, random_state=42):
     :return: (list, list) train and test split
     """
     dataset = load_pickle(file)
-    train_dataset, test_dataset = train_test_split(dataset, test_size=test_size, random_state=random_state,
-                                                   shuffle=shuffle)
+    train_dataset, test_dataset = train_test_split(
+        dataset, test_size=test_size, random_state=random_state, shuffle=shuffle
+    )
 
     return train_dataset, test_dataset
 
@@ -238,9 +252,9 @@ def dataset_class_weight(dataset):
 
     class_labels = targets.flatten()
 
-    edge_class_weights = compute_class_weight('balanced',
-                                              classes=np.unique(class_labels),
-                                              y=class_labels)
+    edge_class_weights = compute_class_weight(
+        "balanced", classes=np.unique(class_labels), y=class_labels
+    )
     edge_class_weights = torch.tensor(edge_class_weights, dtype=torch.float)
 
     return edge_class_weights
@@ -256,8 +270,8 @@ class VRPDataset(Dataset):
         self.process_dataset(raw_dataset)
 
     def __process_one(self, instance):
-        routes = instance['routes']
-        node_features = instance['instance']
+        routes = instance["routes"]
+        node_features = instance["instance"]
 
         if self.normalise_demand:
             _, vehicle_capacity = get_vehicle_config(node_features.shape[0] - 1)
@@ -267,13 +281,15 @@ class VRPDataset(Dataset):
         edge_feat_matrix = edge_feature_matrix(dist_matrix, k=self.k)
         target_matrix = adjacency_matrix(node_features.shape[0], routes)
 
-        return DotDict({
-            'node_features': node_features,
-            'dist_matrix': dist_matrix,
-            'edge_feat_matrix': edge_feat_matrix,
-            'target': target_matrix,
-            'routes': routes
-        })
+        return DotDict(
+            {
+                "node_features": node_features,
+                "dist_matrix": dist_matrix,
+                "edge_feat_matrix": edge_feat_matrix,
+                "target": target_matrix,
+                "routes": routes,
+            }
+        )
 
     def process_dataset(self, results):
         for instance in results:
@@ -295,9 +311,11 @@ class VRPDataset(Dataset):
         edge_feat_matrix = torch.tensor(data.edge_feat_matrix, dtype=torch.int64)
         target = torch.tensor(data.target, dtype=torch.int64)
 
-        features = {"node_features": node_features,
-                    "dist_matrix": dist_matrix,
-                    "edge_feat_matrix": edge_feat_matrix,
-                    "num_vehicles": num_vehicles}
+        features = {
+            "node_features": node_features,
+            "dist_matrix": dist_matrix,
+            "edge_feat_matrix": edge_feat_matrix,
+            "num_vehicles": num_vehicles,
+        }
 
         return features, target

@@ -48,7 +48,7 @@ def plot_graph(nodes, adj_matrix, ax=None):
     G = nx.from_numpy_array(adj_matrix)
     pos = dict(enumerate(nodes))
 
-    nx.draw_networkx(G, pos, ax=ax, node_color='lightblue')
+    nx.draw_networkx(G, pos, ax=ax, node_color="lightblue")
 
 
 def plot_heatmap(nodes, adj_matrix, prediction, ax=None):
@@ -65,9 +65,16 @@ def plot_heatmap(nodes, adj_matrix, prediction, ax=None):
 
     edge_list, edge_values = edge_pred_to_edge_list(prediction)
 
-    nx.draw_networkx_nodes(G, pos, ax=ax, node_color='lightblue')
+    nx.draw_networkx_nodes(G, pos, ax=ax, node_color="lightblue")
     nx.draw_networkx_labels(G, pos, ax=ax)
-    nx.draw_networkx_edges(G, pos, edgelist=edge_list, edge_color=edge_values, edge_cmap=sns.cm.flare, ax=ax)
+    nx.draw_networkx_edges(
+        G,
+        pos,
+        edgelist=edge_list,
+        edge_color=edge_values,
+        edge_cmap=sns.cm.flare,
+        ax=ax,
+    )
 
 
 def plot_beam_search_tour(nodes, adj_matrix, route, ax=None):
@@ -84,6 +91,6 @@ def plot_beam_search_tour(nodes, adj_matrix, route, ax=None):
 
     edge_list = route_to_edge_list(route)
 
-    nx.draw_networkx_nodes(G, pos, ax=ax, node_color='lightblue')
+    nx.draw_networkx_nodes(G, pos, ax=ax, node_color="lightblue")
     nx.draw_networkx_labels(G, pos, ax=ax)
     nx.draw_networkx_edges(G, pos, edgelist=edge_list, edge_cmap=sns.cm.flare, ax=ax)

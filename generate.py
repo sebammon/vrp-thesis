@@ -6,18 +6,20 @@ from joblib import Parallel, delayed
 from utils.common import save_pickle
 from utils.data import generate_and_solve
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--nodes', type=int, default=20)
-    parser.add_argument('--instances', type=int, default=5000)
-    parser.add_argument('--time_limit', type=int, default=3)
-    parser.add_argument('--jobs', type=int, default=-1)
+    parser.add_argument("--nodes", type=int, default=20)
+    parser.add_argument("--instances", type=int, default=5000)
+    parser.add_argument("--time_limit", type=int, default=3)
+    parser.add_argument("--jobs", type=int, default=-1)
 
     args = parser.parse_args()
 
-    results = Parallel(n_jobs=args.jobs, verbose=10, backend='multiprocessing')(
-        delayed(generate_and_solve)(args.nodes, time_limit=args.time_limit) for _ in range(args.instances))
+    results = Parallel(n_jobs=args.jobs, verbose=10, backend="multiprocessing")(
+        delayed(generate_and_solve)(args.nodes, time_limit=args.time_limit)
+        for _ in range(args.instances)
+    )
 
     data_dir = Path("data")
     data_dir.mkdir(exist_ok=True)
