@@ -149,12 +149,14 @@ class BeamSearch:
         """
         Start beam search
         """
+        counter = 0
         if self.num_vehicles > 0:
             for step in range(self.num_iterations):
                 self.step()
         else:
-            while self.unvisited_mask.sum() > 0:
+            while self.unvisited_mask.sum() > 0 and counter < 2 * self.num_nodes:
                 self.step()
+                counter += 1
 
     def step(self):
         """
