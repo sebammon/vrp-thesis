@@ -21,14 +21,14 @@ class BeamSearch:
     """
 
     def __init__(
-            self,
-            trans_probs,
-            num_vehicles,
-            beam_width=1,
-            demands=None,
-            vehicle_capacity=1,
-            random_start=False,
-            allow_consecutive_visits=False,
+        self,
+        trans_probs,
+        num_vehicles,
+        beam_width=1,
+        demands=None,
+        vehicle_capacity=1,
+        random_start=False,
+        allow_consecutive_visits=False,
     ):
         # beam-search parameters
         self.beam_width = beam_width
@@ -42,7 +42,7 @@ class BeamSearch:
             trans_probs, torch.Tensor
         ), "transition probabilities need to be a tensor"
         assert (
-                len(trans_probs.shape) == 3
+            len(trans_probs.shape) == 3
         ), "transition probabilities need to be 3-dimensional"
         assert trans_probs.size(1) == trans_probs.size(
             2
@@ -74,8 +74,8 @@ class BeamSearch:
             self.batch_size, self.beam_width, device=self.device
         )
         self.remaining_capacity = (
-                torch.ones(self.batch_size, self.beam_width, device=self.device)
-                * self.vehicle_capacity
+            torch.ones(self.batch_size, self.beam_width, device=self.device)
+            * self.vehicle_capacity
         )
 
         # mask for removing visited nodes etc.
@@ -149,14 +149,14 @@ class BeamSearch:
         """
         Start beam search
         """
-        counter = 0
+        max_counter = 0
         if self.num_vehicles > 0:
             for step in range(self.num_iterations):
                 self.step()
         else:
-            while self.unvisited_mask.sum() > 0 and counter < 2 * self.num_nodes:
+            while self.unvisited_mask.sum() > 0 and max_counter < 2 * self.num_nodes:
                 self.step()
-                counter += 1
+                max_counter += 1
 
     def step(self):
         """
@@ -196,7 +196,7 @@ class BeamSearch:
 
         # next nodes
         next_node = best_score_idx - (
-                parent_index * self.num_nodes
+            parent_index * self.num_nodes
         )  # convert flat indices back to original
         self.next_nodes.append(next_node)
 
@@ -270,7 +270,7 @@ class BeamSearch:
             .to(self.device)
         )
         prev_pointer = (
-                torch.ones(self.batch_size, 1).type(self.long).to(self.device) * beam_idx
+            torch.ones(self.batch_size, 1).type(self.long).to(self.device) * beam_idx
         )
         last_node = self.next_nodes[-1].gather(1, prev_pointer)
 
