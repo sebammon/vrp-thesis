@@ -1,8 +1,8 @@
 torch
 tensorboard
-numpy
-sklearn
 matplotlib
 seaborn
 networkx
 ortools
+numpy
+sklearn
