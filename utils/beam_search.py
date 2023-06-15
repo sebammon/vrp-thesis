@@ -154,7 +154,10 @@ class BeamSearch:
             for step in range(self.num_iterations):
                 self.step()
         else:
-            while self.unvisited_mask.sum() > 0 and max_counter < 2 * self.num_nodes:
+            while (
+                self.unvisited_mask[..., 1:].sum() > 0
+                and max_counter < 2 * self.num_nodes
+            ):
                 self.step()
                 max_counter += 1
 
