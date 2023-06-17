@@ -58,7 +58,6 @@ class EdgeFeatureLayer(nn.Module):
     def __init__(self, hidden_dim):
         super().__init__()
         self.U = nn.Linear(hidden_dim, hidden_dim)
-        # TODO: Why are not two Linear layers used W_4 and W_5 - does it make a difference?
         self.V = nn.Linear(hidden_dim, hidden_dim)
 
     def forward(self, x, e):
@@ -120,7 +119,7 @@ class NodeFeatureLayer(nn.Module):
 # == GRAPH LAYER ==
 
 
-class GraphLayer(nn.Module):
+class GCNLayer(nn.Module):
     """
     Graph layer for x_i and e_ij
     """
@@ -216,15 +215,12 @@ class GraphNet(nn.Module):
         self.dropout = config.dropout
 
         # embeddings
-        # TODO: Why is bias turned off when in the paper they don't mention anything?
         self.node_feature_embedding = nn.Linear(
             self.node_features, self.hidden_dim, bias=False
         )
         self.distance_embedding = nn.Linear(
             self.edge_distance_features, self.hidden_dim // 2, bias=False
         )
-        # TODO: Don't understand the use of the Embedding layer
-        # 3 for the special cases 0, 1, 2 (more memory efficient)
         self.edge_feature_embedding = nn.Embedding(
             self.edge_types_features, self.hidden_dim // 2
         )
@@ -232,13 +228,13 @@ class GraphNet(nn.Module):
         # GCN layers
         self.gcn_layers = nn.ModuleList(
             [
-                GraphLayer(hidden_dim=self.hidden_dim, dropout=self.dropout)
+                GCNLayer(hidden_dim=self.hidden_dim, dropout=self.dropout)
                 for _ in range(self.num_gcn_layers)
             ]
         )
 
         # edge prediction MLP
-        self.mlp_edges = MLP(
+        self.mlp = MLP(
             in_dim=self.hidden_dim, out_dim=2, hidden_layers=self.num_mlp_layers
         )
 
@@ -271,6 +267,6 @@ class GraphNet(nn.Module):
             )  # B x num_nodes x hidden_dim, B x num_nodes x num_nodes x hidden_dim
 
         # eq 6
-        y_edge_pred = self.mlp_edges(e)  # B x num_nodes x num_nodes x 2
+        y_edge_pred = self.mlp(e)  # B x num_nodes x num_nodes x 2
 
         return y_edge_pred
