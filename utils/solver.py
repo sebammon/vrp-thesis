@@ -6,8 +6,8 @@ class Solver:
     def __init__(
         self,
         data,
-        time_limit=5,
-        first_solution_strategy="SAVINGS",
+        time_limit,
+        first_solution_strategy="PATH_CHEAPEST_ARC",
         local_search_metaheuristic="GUIDED_LOCAL_SEARCH",
     ):
         """

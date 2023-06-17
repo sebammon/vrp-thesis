@@ -11,10 +11,9 @@ from utils.solver import Solver
 SCALING_FACTOR = 1000
 
 VEHICLE_OPTIONS = {
-    "10": (3, 30),
-    "20": (5, 40),
-    "50": (9, 50),
-    "100": (15, 60),
+    "10": (4, 20),
+    "20": (5, 30),
+    "50": (10, 40),
 }
 
 
@@ -113,12 +112,13 @@ def generate_and_solve(num_nodes, time_limit=3):
     :return: dict solution
     """
     instance = generate_instance(num_nodes)
-    routes, _solver = solve(instance, time_limit=time_limit)
+    routes, solver = solve(instance, time_limit=time_limit)
 
     if len(routes) > 0:
         solution = {
             "instance": instance,
             "routes": routes,
+            "vehicle_capacity": solver.data["vehicle_capacities"][0],
         }
 
         return solution
@@ -261,7 +261,7 @@ def dataset_class_weight(dataset):
 
 
 class VRPDataset(Dataset):
-    def __init__(self, raw_dataset, k=3, normalise_demand=True):
+    def __init__(self, raw_dataset, k, normalise_demand=True):
         super().__init__()
         self.data = []
         self.k = k
@@ -272,9 +272,9 @@ class VRPDataset(Dataset):
     def __process_one(self, instance):
         routes = instance["routes"]
         node_features = instance["instance"]
+        vehicle_capacity = instance["vehicle_capacity"]
 
         if self.normalise_demand:
-            _, vehicle_capacity = get_vehicle_config(node_features.shape[0] - 1)
             node_features[:, 2] = node_features[:, 2] / vehicle_capacity
 
         dist_matrix = distance_matrix(node_features[:, :2])

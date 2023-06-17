@@ -9,9 +9,9 @@ from utils.data import generate_and_solve
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--nodes", type=int, default=20)
-    parser.add_argument("--instances", type=int, default=5000)
-    parser.add_argument("--time_limit", type=int, default=3)
+    parser.add_argument("--nodes", type=int, required=True)
+    parser.add_argument("--instances", type=int, required=True)
+    parser.add_argument("--time_limit", type=int, required=True)
     parser.add_argument("--jobs", type=int, default=-1)
 
     args = parser.parse_args()
