@@ -187,11 +187,12 @@ def adjacency_matrix(num_nodes, routes):
     return adj_matrix
 
 
-def edge_feature_matrix(dist_matrix, k):
+def edge_feature_matrix(dist_matrix, k, special_connections=False):
     """
     Computes the edge feature matrix
     :param dist_matrix: (n, n) distance matrix
     :param k: number of nearest neighbors
+    :param special_connections: whether to add special connections
     :return: (n, n) edge feature matrix
     """
     edge_matrix = np.zeros_like(dist_matrix)
@@ -204,12 +205,12 @@ def edge_feature_matrix(dist_matrix, k):
         knns = np.argsort(dist_matrix[i])[1 : k + 1]
         edge_matrix[i, knns] = 1  # neat trick
 
+    if special_connections:
+        edge_matrix[:, 0] += 3
+        edge_matrix[0, :] += 3
+
     # self connections
     np.fill_diagonal(edge_matrix, 2)
-
-    # depot connections
-    # TODO: test if this is necessary
-    # edge_matrix[1:, 0] = 3
 
     return edge_matrix
 
@@ -261,10 +262,13 @@ def dataset_class_weight(dataset):
 
 
 class VRPDataset(Dataset):
-    def __init__(self, raw_dataset, k, normalise_demand=True):
+    def __init__(
+        self, raw_dataset, k, special_connections=False, normalise_demand=True
+    ):
         super().__init__()
         self.data = []
         self.k = k
+        self.special_connections = special_connections
         self.normalise_demand = normalise_demand
 
         self.process_dataset(raw_dataset)
@@ -278,7 +282,9 @@ class VRPDataset(Dataset):
             node_features[:, 2] = node_features[:, 2] / vehicle_capacity
 
         dist_matrix = distance_matrix(node_features[:, :2])
-        edge_feat_matrix = edge_feature_matrix(dist_matrix, k=self.k)
+        edge_feat_matrix = edge_feature_matrix(
+            dist_matrix, k=self.k, special_connections=self.special_connections
+        )
         target_matrix = adjacency_matrix(node_features.shape[0], routes)
 
         return DotDict(
