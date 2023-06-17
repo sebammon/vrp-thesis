@@ -245,9 +245,9 @@ class GraphNet(nn.Module):
     def forward(self, node_features, distance_matrix, edge_features):
         """
         Args:
-            node_features: Coordinates for each node (batch x num_nodes x num_nodes)
+            node_features: Node features for each node (batch x num_nodes x 3)
             distance_matrix: Distance matrix between nodes (batch x num_nodes x num_nodes)
-            edge_features: Edge types to help learn faster (batch x num_nodes x num_nodes)
+            edge_features: Edge connection types (batch x num_nodes x num_nodes)
         """
         # eq 2
         x = self.node_feature_embedding(node_features)  # B x num_nodes x hidden_dim
