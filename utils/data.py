@@ -263,13 +263,19 @@ def dataset_class_weight(dataset):
 
 class VRPDataset(Dataset):
     def __init__(
-        self, raw_dataset, k, special_connections=False, normalise_demand=True
+        self,
+        raw_dataset,
+        k,
+        special_connections=False,
+        normalise_demand=True,
+        node_token=False,
     ):
         super().__init__()
         self.data = []
         self.k = k
         self.special_connections = special_connections
         self.normalise_demand = normalise_demand
+        self.node_token = node_token
 
         self.process_dataset(raw_dataset)
 
@@ -280,6 +286,12 @@ class VRPDataset(Dataset):
 
         if self.normalise_demand:
             node_features[:, 2] = node_features[:, 2] / vehicle_capacity
+
+        if self.node_token:
+            nodes = np.zeros((node_features.shape[0], 1))
+            nodes[0, :] = 1
+
+            node_features = np.concatenate((node_features, nodes), axis=1)
 
         dist_matrix = distance_matrix(node_features[:, :2])
         edge_feat_matrix = edge_feature_matrix(
