@@ -203,7 +203,7 @@ class MLP(nn.Module):
 
 
 class GraphNet(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, experimental=False):
         super().__init__()
         # configs
         self.hidden_dim = config.hidden_dim
@@ -213,17 +213,23 @@ class GraphNet(nn.Module):
         self.num_gcn_layers = config.num_gcn_layers
         self.num_mlp_layers = config.num_mlp_layers
         self.dropout = config.dropout
+        self.experimental = experimental
 
         # embeddings
         self.node_feature_embedding = nn.Linear(
             self.node_features, self.hidden_dim, bias=False
         )
-        self.distance_embedding = nn.Linear(
-            self.edge_distance_features, self.hidden_dim // 2, bias=False
-        )
-        self.edge_feature_embedding = nn.Embedding(
-            self.edge_types_features, self.hidden_dim // 2
-        )
+        if self.experimental:
+            self.distance_embedding = nn.Linear(
+                self.edge_distance_features, self.hidden_dim, bias=False
+            )
+        else:
+            self.distance_embedding = nn.Linear(
+                self.edge_distance_features, self.hidden_dim // 2, bias=False
+            )
+            self.edge_feature_embedding = nn.Embedding(
+                self.edge_types_features, self.hidden_dim // 2
+            )
 
         # GCN layers
         self.gcn_layers = nn.ModuleList(
@@ -253,12 +259,16 @@ class GraphNet(nn.Module):
         e_dist = self.distance_embedding(
             dist_unsqueezed
         )  # B x num_nodes x num_nodes x hidden_dim // 2
-        e_values = self.edge_feature_embedding(
-            edge_features
-        )  # B x num_nodes x num_nodes x hidden_dim // 2
-        e = torch.cat(
-            (e_dist, e_values), dim=3
-        )  # B x num_nodes x num_nodes x hidden_dim
+
+        if self.experimental:
+            e = e_dist
+        else:
+            e_values = self.edge_feature_embedding(
+                edge_features
+            )  # B x num_nodes x num_nodes x hidden_dim // 2
+            e = torch.cat(
+                (e_dist, e_values), dim=3
+            )  # B x num_nodes x num_nodes x hidden_dim
 
         # eq 4 and 5
         for gcn_layer in self.gcn_layers:
