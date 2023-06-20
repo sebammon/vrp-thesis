@@ -1,5 +1,7 @@
 import pickle
 
+import torch
+
 
 class DotDict(dict):
     """dot.notation access to dictionary attributes"""
@@ -10,6 +12,12 @@ class DotDict(dict):
 
 def _n(v):
     return v.detach().cpu().numpy()
+
+
+def get_device():
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+    return device
 
 
 def save_pickle(obj, file):
@@ -56,3 +64,32 @@ def load_config(**kwargs):
     config.dropout = kwargs.get("dropout", None)
 
     return config
+
+
+def save_checkpoint(filename, model, optimizer, **kwargs):
+    """
+    Saves the current state of the model.
+    :param str filename: filename of the checkpoint. Stored in the model directory.
+    :param torch.nn.Module model: model to save
+    :param torch.optim.Optimizer optimizer: optimizer to save
+    :keyword DotDict config: configuration of the model
+    :return: None
+    """
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            **kwargs,
+        },
+        filename,
+    )
+
+
+def load_checkpoint(filename, device=torch.device("cpu")):
+    """
+    Loads the checkpoint from disk.
+    :param str filename: filename of the checkpoint. Stored in the model directory.
+    :param torch.device device: device to load the checkpoint to
+    :return: (config, model_state_dict, optimizer_state_dict, class_weights)
+    """
+    return torch.load(filename, map_location=device)
