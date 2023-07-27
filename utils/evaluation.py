@@ -7,6 +7,7 @@ from sklearn.metrics import (
     balanced_accuracy_score,
     precision_recall_fscore_support,
 )
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 from utils.beam_search import BeamSearch
 from utils.common import DotDict
@@ -96,7 +97,7 @@ def check_valid_tours(tours, demands, num_nodes):
     return valid_tours
 
 
-def beam_search(y_preds, batch_node_features, num_vehicles, beam_width=1280):
+def beam_search(y_preds, batch_node_features, num_vehicles, beam_width=1280, **kwargs):
     y_preds = y_preds.cpu()
     batch_demands = (
         batch_node_features[..., 2].cpu() if batch_node_features is not None else None
@@ -109,6 +110,7 @@ def beam_search(y_preds, batch_node_features, num_vehicles, beam_width=1280):
         demands=batch_demands,
         beam_width=beam_width,
         num_vehicles=num_vehicles,
+        **kwargs
     )
     beamsearch.search()
 
@@ -127,9 +129,14 @@ def get_tour_length_and_validity(
 
 
 def shortest_tour(
-    y_preds, batch_dist_matrix, batch_node_features, num_vehicles, beam_width=1280
+    y_preds,
+    batch_dist_matrix,
+    batch_node_features,
+    num_vehicles,
+    beam_width=1280,
+    **kwargs
 ):
-    bs = beam_search(y_preds, batch_node_features, num_vehicles, beam_width)
+    bs = beam_search(y_preds, batch_node_features, num_vehicles, beam_width, **kwargs)
 
     batch_dist_matrix = batch_dist_matrix.cpu().numpy()
     batch_demands = batch_node_features[..., 2].cpu().numpy()
@@ -154,9 +161,14 @@ def shortest_tour(
 
 
 def most_probable_tour(
-    y_preds, batch_dist_matrix, batch_node_features, num_vehicles, beam_width=1280
+    y_preds,
+    batch_dist_matrix,
+    batch_node_features,
+    num_vehicles,
+    beam_width=1280,
+    **kwargs
 ):
-    bs = beam_search(y_preds, batch_node_features, num_vehicles, beam_width)
+    bs = beam_search(y_preds, batch_node_features, num_vehicles, beam_width, **kwargs)
 
     # get most probable tours (index = 0)
     tours = bs.get_beam(0)

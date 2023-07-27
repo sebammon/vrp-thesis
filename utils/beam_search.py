@@ -29,10 +29,12 @@ class BeamSearch:
         vehicle_capacity=1,
         random_start=False,
         allow_consecutive_visits=False,
+        free_depot=False,
     ):
         # beam-search parameters
         self.beam_width = beam_width
         self.allow_consecutive_visits = allow_consecutive_visits
+        self.free_depot = free_depot
 
         self.device = trans_probs.device
         self.float = torch.float32
@@ -53,7 +55,7 @@ class BeamSearch:
             assert len(demands.shape) == 2, "demands need to be 2-dimensional"
 
         # all transition probabilities
-        self.trans_probs = trans_probs.type(self.float)
+        self.trans_probs = trans_probs.clone().type(self.float)
         self.demands = demands.to(self.device) if demands is not None else None
         self.batch_size = trans_probs.size(0)
         self.num_nodes = trans_probs.size(1)
@@ -173,6 +175,8 @@ class BeamSearch:
             beam_prob = trans_probs
             # use only the starting nodes
             beam_prob[:, 1:] = torch.zeros_like(beam_prob[:, 1:])
+            if self.free_depot:
+                self.trans_probs[..., 0] = 1
         else:
             # multiply the previous scores (probabilities) with the current ones
             expanded_scores = self.scores.unsqueeze(2).expand_as(
@@ -182,7 +186,8 @@ class BeamSearch:
 
         # mask out nodes (based on conditions)
         beam_prob = beam_prob * self.mask
-        beam_prob += 1e-25  # avoid creating zero probability tours
+        if not self.free_depot:
+            beam_prob += 1e-25  # avoid creating zero probability tours
 
         beam_prob = beam_prob.view(
             beam_prob.size(0), -1
